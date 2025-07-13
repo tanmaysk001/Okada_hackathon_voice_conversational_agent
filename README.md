@@ -1,4 +1,4 @@
-# Okada Hackathon Submission 2025 [31mVoice-Enabled Conversational RAG Agent[0m
+# Okada Hackathon Submission 2025 "Voice-Enabled Conversational RAG Agent"
 
 > _"Ask it anything – by voice – and watch it reason across your private docs **and** the live web."_
 
