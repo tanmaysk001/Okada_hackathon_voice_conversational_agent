@@ -26,8 +26,8 @@
 | Category | Details |
 |----------|---------|
 | **Conversational Modality** | Bi-directional **voice** & text (WebSocket stream) |
-| **Knowledge Source** | Retrieval Augmented Generation on user-uploaded PDFs, DOCX, CSV, TXT |
-| **LLM** | Google **Gemini 1.5 Pro** (via LangGraph) |
+| **Knowledge Source** | Retrieval Augmented Generation on user-uploaded PDFs, DOCX, CSV, TXT, JSON |
+| **LLM** | Google **Gemini 2.5 Flash** (via LangGraph) |
 | **Web Search** | Toggleable real-time search with Tavily API |
 | **Persistence** | Redis (chat history) • ChromaDB (vector store) |
 | **Observability** | Every endpoint returns `processing_duration` (ms) |
@@ -53,7 +53,7 @@
 ```bash
 # 1. clone & enter repository
 $ git clone <your-fork-url>
-$ cd okada_hackathon_rag_voice/backend
+$ cd backend
 
 # 2. python environment
 $ python -m venv .venv && source .venv/bin/activate             # Windows: .venv\Scripts\activate
@@ -122,7 +122,7 @@ graph TD
 | Endpoint | Verb | Description |
 |----------|------|-------------|
 | `/api/v1/chat` | `POST` | Single-shot chat completion |
-| `/api/v1/upload_rag_docs` | `POST` | Upload one or more documents (PDF/DOCX/TXT/CSV) for RAG |
+| `/api/v1/upload_rag_docs` | `POST` | Upload one or more documents (PDF/DOCX/TXT/CSV/JSON) for RAG |
 | `/api/v1/transcribe` | `POST` | Speech-to-Text for pre-recorded audio |
 | `/api/v1/speak` | `POST` | Text-to-speech synthesis |
 | `/api/v1/reset` | `POST` | Clears Redis history & related vector chunks |
@@ -144,7 +144,7 @@ Each JSON response contains:
 | `GOOGLE_API_KEY` | Gemini access |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Path to GCP service-account JSON |
 | `TAVILY_API_KEY` | (Optional) Web search |
-| `REDIS_URL` | e.g. `redis://localhost:6379/0` |
+| `REDIS_URL` | e.g. `redis://localhost:6379/` (Default URL for REDIS) |
 | `CHROMA_PERSIST_DIR` | Folder for ChromaDB persistence |
 | `VITE_API_URL` | Frontend ⇄ Backend base-url |
 
