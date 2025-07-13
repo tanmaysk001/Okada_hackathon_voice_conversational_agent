@@ -2,7 +2,6 @@
 
 > _"Ask it anything – by voice – and watch it reason across your private docs **and** the live web."_
 
-![Hero](docs/hero.png)
 
 ![Demo](image.png)
 
