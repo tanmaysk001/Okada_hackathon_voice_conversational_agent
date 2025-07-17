@@ -32,6 +32,8 @@ export function ChatLayout({ sessionId: initialSessionId }: ChatLayoutProps) {
   const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(false);
   const [isLiveChatOpen, setIsLiveChatOpen] = useState(false);
 
+  const [liveChatKey, setLiveChatKey] = useState(uuidv4());
+
   // Just update the session ID. The useChat hook will handle the rest.
   const handleSelectSession = (sessionId: string) => {
     setCurrentSessionId(sessionId);
@@ -40,6 +42,11 @@ export function ChatLayout({ sessionId: initialSessionId }: ChatLayoutProps) {
   // Generate a new session ID. The useChat hook will see it's new and clear the messages.
   const handleNewChat = () => {
     setCurrentSessionId(uuidv4());
+  };
+
+  const handleOpenLiveChat = () => {
+    setLiveChatKey(uuidv4()); // [FIX] Reset the key to force re-mount
+    setIsLiveChatOpen(true);
   };
 
   const handleDeleteSession = async (sessionIdToDelete: string) => {
@@ -106,7 +113,7 @@ export function ChatLayout({ sessionId: initialSessionId }: ChatLayoutProps) {
             Web Search
           </Button>
 
-          <Button variant="outline" size="sm" onClick={() => setIsLiveChatOpen(true)} className="text-gray-400 hover:text-gray-200">
+          <Button variant="outline" size="sm" onClick={handleOpenLiveChat} className="text-gray-400 hover:text-gray-200">
             <Headphones className="mr-2 h-4 w-4" />
             Live Chat
           </Button>
@@ -129,9 +136,11 @@ export function ChatLayout({ sessionId: initialSessionId }: ChatLayoutProps) {
         />
       </CardFooter>
       <LiveChatModal
+        key={liveChatKey} // [FIX] Add key to force re-mount
         isOpen={isLiveChatOpen}
         onOpenChange={setIsLiveChatOpen}
-        isRagEnabled={isWebSearchEnabled}
+        isRagEnabled={isTextRagEnabled}
+        isWebSearchEnabled={isWebSearchEnabled}
         sessionId={currentSessionId}
       />
     </Card>

@@ -13,7 +13,7 @@ redis_client = redis.from_url(settings.REDIS_URL)
 
 @router.get("/sessions", response_model=List[Dict[str, str]])
 def get_all_sessions():
-    """Retrieve all chat session IDs and their titles from Redis."""
+    """Retrieve +all chat session IDs and their titles from Redis."""
     try:
         session_keys = redis_client.keys("message_store:*")
         sessions = []
@@ -38,12 +38,12 @@ def get_all_sessions():
         raise HTTPException(status_code=500, detail=f"Could not connect to Redis or fetch sessions: {e}")
 
 @router.get("/sessions/{session_id}", response_model=List[Dict[str, Any]])
-def get_session_by_id(session_id: str):
+async def get_session_by_id(session_id: str):
     """Retrieve the full message history for a specific session ID."""
     try:
-        history = get_session_history(session_id)
-        # The messages are BaseMessage objects, we need to serialize them to dicts
-        return [message.dict() for message in history.messages]
+        history = await get_session_history(session_id)
+        messages = await history.aget_messages()
+        return [message.dict() for message in messages]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not retrieve session history: {e}")
 

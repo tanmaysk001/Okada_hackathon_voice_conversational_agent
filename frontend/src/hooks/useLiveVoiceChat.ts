@@ -1,6 +1,13 @@
 import { useState, useRef, useCallback } from 'react';
 import toast from 'react-hot-toast';
 
+// --- [NEW] Transcript data model ---
+export interface Transcript {
+  source: 'user' | 'ai';
+  text: string;
+  timestamp: Date;
+}
+
 type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 type ConversationStatus = 'idle' | 'recording' | 'processing' | 'speaking';
 
@@ -42,9 +49,11 @@ function writeString(view: DataView, offset: number, string: string) {
 }
 
 // --- [MODIFIED] Hook now accepts initial configuration ---
-export const useLiveVoiceChat = (isRagEnabled: boolean, sessionId: string) => {
+export const useLiveVoiceChat = (isRagEnabled: boolean, isWebSearchEnabled: boolean, sessionId: string) => {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [conversationStatus, setConversationStatus] = useState<ConversationStatus>('idle');
+  // --- [NEW] State for conversation transcripts ---
+  const [transcripts, setTranscripts] = useState<Transcript[]>([]);
 
   const socketRef = useRef<WebSocket | null>(null);
   const playbackAudioContextRef = useRef<AudioContext | null>(null);
@@ -96,6 +105,7 @@ export const useLiveVoiceChat = (isRagEnabled: boolean, sessionId: string) => {
       ws.send(JSON.stringify({
         config: {
           isRagEnabled: isRagEnabled,
+          isWebSearchEnabled: isWebSearchEnabled,
           sessionId: sessionId
         }
       }));
@@ -117,6 +127,14 @@ export const useLiveVoiceChat = (isRagEnabled: boolean, sessionId: string) => {
             audioQueueRef.current.push(byteArray.buffer);
             processAudioQueue();
         }
+        // --- [NEW] Handle text responses and user transcripts ---
+        if (data.text_response) {
+            setTranscripts(prev => [...prev, { source: 'ai', text: data.text_response, timestamp: new Date() }]);
+        }
+        if (data.user_transcript) {
+            setTranscripts(prev => [...prev, { source: 'user', text: data.user_transcript, timestamp: new Date() }]);
+        }
+        // ------------------------------------------------------
     };
     
     ws.onerror = () => {
@@ -128,7 +146,7 @@ export const useLiveVoiceChat = (isRagEnabled: boolean, sessionId: string) => {
       setConnectionStatus('disconnected');
     };
     socketRef.current = ws;
-  }, [connectionStatus, isRagEnabled, sessionId, processAudioQueue]);
+  }, [connectionStatus, isRagEnabled, isWebSearchEnabled, sessionId, processAudioQueue]);
   
   const startRecording = async () => {
     if (audioWorkletNodeRef.current) return;
@@ -199,5 +217,6 @@ export const useLiveVoiceChat = (isRagEnabled: boolean, sessionId: string) => {
     }
   };
 
-  return { connectionStatus, conversationStatus, connect, disconnect, toggleRecording };
+  // --- [MODIFIED] Return transcripts ---
+  return { connectionStatus, conversationStatus, transcripts, connect, disconnect, toggleRecording };
 };

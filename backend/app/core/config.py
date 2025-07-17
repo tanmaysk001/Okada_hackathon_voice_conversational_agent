@@ -1,25 +1,21 @@
-from pydantic_settings import BaseSettings,SettingsConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Optional
 
 class Settings(BaseSettings):
-    """
-    Manages application settings by loading them from environment variables.
-    """
-    # OPENAI_API_KEY: str
-    # ANTHROPIC_API_KEY: str
+    # From Project 2
     GOOGLE_API_KEY: str
+    TAVILY_API_KEY: str
     REDIS_URL: str = "redis://localhost:6379"
-    
-    model_config = SettingsConfigDict(
-        # Tell Pydantic to read variables from a file named .env
-        env_file=".env",
-        
-        # This is the most important part for your error:
-        # It tells Pydantic to simply ignore any extra variables it finds in the .env file.
-        extra='ignore' 
-    )
-    
-    
-    # class Config:
-    #     env_file=".env"
-        
+
+    # From Project 1
+    MONGO_URI: str
+    MONGO_DB_NAME: str
+    GOOGLE_CALENDAR_CREDENTIALS_PATH: str
+    CHROMA_PERSIST_DIRECTORY: str = "./user_chroma_db"
+    CHROMA_HOST: Optional[str] = None
+    CHROMA_PORT: Optional[int] = None
+    CHROMA_COLLECTION_PREFIX: str = "okada_user_"
+
+    model_config = SettingsConfigDict(env_file=".env", extra='ignore')
+
 settings = Settings()

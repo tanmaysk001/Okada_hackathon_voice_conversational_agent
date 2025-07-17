@@ -10,10 +10,12 @@ from app.agent.nodes import (
     route_after_rag,
     run_web_search,
     triage_query,
+    handle_scheduling,
+    handle_recommendation
 )
 
-def create_agent_graph():
-    """Creates the LangGraph agent with intelligent, session-based routing."""
+def create_agent_graph(checkpointer):
+    """Creates the LangGraph agent with a checkpointer for persistent memory."""
     graph = StateGraph(AgentState)
 
     # Add nodes
@@ -24,7 +26,9 @@ def create_agent_graph():
     graph.add_node("generate_direct", generate_direct)
     graph.add_node("query_csv_tool", query_csv_tool)
     graph.add_node("classify_csv_intent", classify_csv_intent)
-    graph.add_node("route_after_rag", route_after_rag) # Add the router as a node
+    graph.add_node("route_after_rag", route_after_rag)
+    graph.add_node("handle_scheduling", handle_scheduling)
+    graph.add_node("handle_recommendation", handle_recommendation)
 
     # --- Define Edges ---
     graph.set_entry_point("agent_entry")
@@ -34,6 +38,8 @@ def create_agent_graph():
         source="agent_entry",
         path=triage_query,
         path_map={
+            "handle_scheduling": "handle_scheduling",
+            "handle_recommendation": "handle_recommendation",
             "classify_csv_intent": "classify_csv_intent", 
             "retrieve_from_rag": "retrieve_from_rag",   
             "run_web_search": "run_web_search",
@@ -45,7 +51,7 @@ def create_agent_graph():
     # It uses the intent to decide between the analytical tool and the semantic retriever.
     graph.add_conditional_edges(
         source="classify_csv_intent",
-        path=lambda x: x['csv_intent'], 
+        path=lambda x: x['csv_intent'],
         path_map={
             "analytical": "query_csv_tool",
             "semantic": "retrieve_from_rag",
@@ -58,7 +64,7 @@ def create_agent_graph():
     # Conditional routing after the RAG router node
     graph.add_conditional_edges(
         source="route_after_rag",
-        path=lambda x: x.get("next_node"), # Read the next node from the state
+        path=lambda x: x.get("next_node"),
         path_map={
             "generate_with_context": "generate_with_context",
             "run_web_search": "run_web_search",
@@ -72,7 +78,9 @@ def create_agent_graph():
     # End points
     graph.add_edge("generate_with_context", END)
     graph.add_edge("generate_direct", END)
-    graph.add_edge("query_csv_tool", END) # This ensures the graph terminates after the CSV tool runs.
+    graph.add_edge("query_csv_tool", END)
+    graph.add_edge("handle_scheduling", END)
+    graph.add_edge("handle_recommendation", END)
 
-    # Compile the graph
-    return graph.compile()
+    # Compile the graph with the checkpointer
+    return graph.compile(checkpointer=checkpointer)

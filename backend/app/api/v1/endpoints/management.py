@@ -22,8 +22,8 @@ async def reset_conversation(request: ResetRequest):
     
     try:
         # 1. Clear conversation history from Redis
-        session_history = get_session_history(request.session_id)
-        session_history.clear()
+        session_history = await get_session_history(request.session_id)
+        await session_history.aclear()
         print(f"--- Cleared conversation history for session: {request.session_id} ---")
 
         # 2. Delete RAG documents from ChromaDB

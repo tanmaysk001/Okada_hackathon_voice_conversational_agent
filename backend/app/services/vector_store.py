@@ -55,7 +55,7 @@ CHROMA_COLLECTION_NAME = "multimodal_rag_vector_store"
 # Initialize the Google Generative AI embedding model
 # We use LangChain's wrapper for seamless integration.
 embedding_function = GoogleGenerativeAIEmbeddings(
-    model="models/text-embedding-004", 
+    model="models/gemini-embedding-001", 
     task_type="retrieval_document"
 )
 
@@ -125,3 +125,22 @@ def delete_documents_by_session_id(session_id: str):
         # Depending on requirements, you might want to re-raise the exception
         # or handle it gracefully.
         raise
+
+async def query_vector_store(session_id: str, query_text: str, n_results: int = 2) -> str:
+    """Query the vector store for a given session and query text asynchronously."""
+    async_client = chromadb.AsyncClient(path=CHROMA_PERSIST_DIRECTORY)
+    collection = await async_client.get_or_create_collection(
+        name=CHROMA_COLLECTION_NAME,
+        embedding_function=embedding_function
+    )
+    
+    results = await collection.query(
+        query_texts=[query_text],
+        n_results=n_results,
+        filter={"session_id": session_id}
+    )
+    
+    documents = results.get('documents')
+    if documents and documents[0]:
+        return "\n".join(documents[0])
+    return ""

@@ -1,8 +1,12 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, AIMessage
+from app.services.appointment_workflow import appointment_workflow_manager
+from app.services.recommendation_workflow import recommendation_workflow_manager, AIMessage
 from app.agent.state import AgentState
 from app.services import vector_store
 from app.tools import web_search
+from app.services.fast_message_classifier import FastMessageClassifier
+from app.models.crm_models import MessageType, ProcessingStrategy
 from app.core.session_manager import get_session_file_info
 import os
 from dotenv import load_dotenv
@@ -88,26 +92,55 @@ def generate_with_context(state: AgentState) -> dict:
     response = llm_gemini_rag.invoke([new_message])
     return {"messages": [response]}
 
-def triage_query(state: AgentState) -> str:
-    """Routes the query based on user flags and the presence and type of a RAG file."""
+async def triage_query(state: AgentState) -> str:
+    """
+    Intelligently routes the user's query to the correct tool or workflow.
+    This is the agent's main decision-making node.
+    """
+    print("--- Triage Node: Classifying Query ---")
+    # Ensure 'messages' is a list and get the last message's content
+    messages = state.get("messages", [])
+    if not messages:
+        # Handle case where there are no messages
+        print("No messages in state, routing to direct generation.")
+        return "generate_direct"
+    user_message = messages[-1].content
+    session_id = state.get("session_id")
+    
+    # Use the fast classifier for initial categorization
+    classifier = FastMessageClassifier()
+    classification = classifier.classify_message(user_message)
+    
+    print(f"Fast Classification: {classification.message_type.value}, Strategy: {classification.processing_strategy.value}")
+    
+    # Route based on the determined strategy
+    if classification.processing_strategy == ProcessingStrategy.APPOINTMENT_WORKFLOW:
+        print("Routing to: Appointment Workflow")
+        return "handle_scheduling"
+        
+    if classification.processing_strategy == ProcessingStrategy.PROPERTY_WORKFLOW:
+        print("Routing to: Recommendation Workflow")
+        return "handle_recommendation"
+
+    # Fallback to original logic for RAG, Web Search, or Direct Chat
     use_rag = state.get("use_rag", False)
     use_web = state.get("use_web_search", False)
-    session_id = state.get("session_id")
-    file_info = get_session_file_info(session_id)
+    file_info = await get_session_file_info(session_id)
 
     if use_rag and file_info and file_info.get("file_path"):
         file_path = file_info["file_path"]
-        # Check the file extension to decide the route
         if file_path.lower().endswith('.csv'):
+            print("Routing to: CSV Tool")
             return "query_csv_tool"
         else:
-            # For other file types like PDF, TXT, etc.
+            print("Routing to: RAG Retrieval")
             return "retrieve_from_rag"
 
-    # Fallback to web search or direct generation if RAG is not used or no file is found
     if use_web:
+        print("Routing to: Web Search")
         return "run_web_search"
     
+    print("Routing to: Direct Generation")
     return "generate_direct"
 
 def route_after_rag(state: AgentState) -> dict:
@@ -127,7 +160,7 @@ def route_after_rag(state: AgentState) -> dict:
     # The return value must be a dictionary to update the state correctly
     return {"next_node": next_node}
 
-def classify_csv_intent(state: AgentState) -> str:
+def classify_csv_intent(state: AgentState) -> dict:
     """Classifies the user's query for a CSV file as 'semantic' or 'analytical' to decide the routing."""
     user_query = state["messages"][-1].content
 
@@ -150,10 +183,8 @@ def classify_csv_intent(state: AgentState) -> str:
     print(f"> Classified Intent: {intent}")
     print("-----------------------------")
 
-    if "analytical" in intent:
-        return "analytical"
-    else:
-        return "semantic"
+    # The key in the returned dictionary must match the conditional edge.
+    return {"csv_intent": "analytical" if "analytical" in intent else "semantic"}
 
 def query_csv_tool(state: AgentState) -> dict:
     """Handles analytical queries directed at the CSV tool."""
@@ -162,7 +193,7 @@ def query_csv_tool(state: AgentState) -> dict:
     file_info = get_session_file_info(session_id)
     
     if not file_info or not file_info.get("file_path"):
-        return {"messages": [HumanMessage(content="No CSV file found for this session.")]}
+        return {"messages": [AIMessage(content="No CSV file found for this session.")]}
     
     file_path = file_info.get("file_path")
 
@@ -170,4 +201,47 @@ def query_csv_tool(state: AgentState) -> dict:
     print("---------------------------\n")
     from app.tools.csv_tool import get_csv_agent_executor
     response_text = get_csv_agent_executor(file_path, user_query)
-    return {"messages": [HumanMessage(content=response_text)]}
+    return {"messages": [AIMessage(content=response_text)]}
+
+async def handle_scheduling(state: AgentState) -> dict:
+    """Handles the appointment scheduling workflow."""
+    print("--- Node: Handling Scheduling ---")
+    user_message = state["messages"][-1].content
+    user_id = state.get("session_id") # Using session_id as the user identifier
+
+    # This node will now properly manage the appointment workflow.
+    # It checks for an active session or starts a new one.
+    from app.services.database_service import get_database
+    db = get_database()
+    session_collection = db["appointment_sessions"]
+    active_session = await session_collection.find_one({
+        "user_id": user_id,
+        "status": {"$in": ["collecting_info", "confirming"]}
+    })
+
+    if active_session:
+        workflow_response = await appointment_workflow_manager.process_user_response(
+            session_id=active_session["_id"],
+            user_response=user_message
+        )
+    else:
+        workflow_response = await appointment_workflow_manager.start_appointment_booking(
+            user_id=user_id,
+            message=user_message
+        )
+    
+    response_text = workflow_response.message
+    return {"messages": [AIMessage(content=response_text)]}
+
+async def handle_recommendation(state: AgentState) -> dict:
+    """Handles the property recommendation workflow."""
+    print("--- Node: Handling Recommendation ---")
+    user_message = state["messages"][-1].content
+    user_id = state.get("session_id")
+
+    # This node will manage the recommendation workflow.
+    workflow_session = await recommendation_workflow_manager.start_recommendation_workflow(user_id=user_id, message=user_message)
+    next_step = await recommendation_workflow_manager.get_next_step(workflow_session.session_id)
+    response_text = next_step.response_message if next_step else "I'm ready to find some properties for you! What are you looking for?"
+
+    return {"messages": [AIMessage(content=response_text)]}

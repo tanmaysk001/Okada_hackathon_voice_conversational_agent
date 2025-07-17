@@ -8,14 +8,15 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from './ui/button';
 import { Mic, PhoneOff, Loader2, Square } from 'lucide-react';
-import { useLiveVoiceChat } from '@/hooks/useLiveVoiceChat';
-import { useEffect } from 'react';
+import { useLiveVoiceChat, type Transcript } from '@/hooks/useLiveVoiceChat';
+import { useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
 
 interface LiveChatModalProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   isRagEnabled: boolean;
+  isWebSearchEnabled: boolean;
   sessionId: string;
 }
 
@@ -29,9 +30,37 @@ const AudioVisualizer = () => (
   </div>
 );
 
-export function LiveChatModal({ isOpen, onOpenChange, isRagEnabled, sessionId }: LiveChatModalProps) {
-  const { connectionStatus, conversationStatus, connect, disconnect, toggleRecording } = 
-    useLiveVoiceChat(isRagEnabled, sessionId);
+const TranscriptLog = ({ transcripts }: { transcripts: Transcript[] }) => {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [transcripts]);
+
+  return (
+    <div ref={scrollRef} className="flex-grow h-48 overflow-y-auto p-4 border rounded-md bg-muted/50 space-y-4">
+      {transcripts.map((t, i) => (
+        <div key={i} className={cn("flex", {
+          "justify-end": t.source === 'user',
+          "justify-start": t.source === 'ai',
+        })}>
+          <div className={cn("max-w-[75%] p-3 rounded-lg text-sm", {
+            "bg-blue-500 text-white": t.source === 'user',
+            "bg-gray-200 text-gray-800": t.source === 'ai',
+          })}>
+            <p>{t.text}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+export function LiveChatModal({ isOpen, onOpenChange, isRagEnabled, isWebSearchEnabled, sessionId }: LiveChatModalProps) {
+  const { connectionStatus, conversationStatus, transcripts, connect, disconnect, toggleRecording } = 
+    useLiveVoiceChat(isRagEnabled, isWebSearchEnabled, sessionId);
 
   useEffect(() => {
     if (isOpen && connectionStatus === 'disconnected') {
@@ -57,42 +86,46 @@ export function LiveChatModal({ isOpen, onOpenChange, isRagEnabled, sessionId }:
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleEndCall()}>
-      <DialogContent onInteractOutside={(e) => e.preventDefault()} className="bg-gray-900">
+      <DialogContent className="max-w-2xl" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Live Voice Conversation {isRagEnabled && "(RAG Mode)"}</DialogTitle>
           <DialogDescription>{renderStatusDescription()}</DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col items-center justify-center h-48 gap-4">
-          {connectionStatus === 'connecting' && <Loader2 className="h-12 w-12 animate-spin text-muted-foreground" />}
-          
-          {connectionStatus === 'connected' && (
-            <div className='flex flex-col items-center gap-4'>
-              <div className="h-24 w-24 flex items-center justify-center">
-                {conversationStatus === 'speaking' && <AudioVisualizer />}
-                {conversationStatus === 'processing' && <Loader2 className="h-10 w-10 animate-spin text-blue-500" />}
-              </div>
-              <Button
-                size="lg"
-                className={cn("w-24 h-24 rounded-full transition-all duration-300 transform active:scale-95", {
-                  "bg-blue-500 hover:bg-blue-600": conversationStatus === 'idle',
-                  "bg-rose-600 hover:bg-rose-700 animate-breathing-glow": conversationStatus === 'recording',
-                  "bg-gray-400 cursor-not-allowed": !canTalk,
-                  "opacity-0": conversationStatus === 'processing' || conversationStatus === 'speaking' // Hide button when AI is busy
-                })}
-                onClick={toggleRecording}
-                disabled={!canTalk}
-              >
-                {conversationStatus === 'recording' ? (
-                    <Square className="h-8 w-8 fill-white" />
-                ) : (
-                    <Mic className="h-10 w-10" />
-                )}
-              </Button>
-            </div>
-          )}
+        <div className="flex flex-col h-96 gap-4">
+          <TranscriptLog transcripts={transcripts} />
 
-          {connectionStatus === 'error' && <p className="text-red-500">Connection failed. Check permissions & console.</p>}
+          <div className="flex flex-col items-center justify-center flex-shrink-0 h-32 gap-4">
+            {connectionStatus === 'connecting' && <Loader2 className="h-12 w-12 animate-spin text-muted-foreground" />}
+            
+            {connectionStatus === 'connected' && (
+              <div className='flex flex-col items-center gap-4'>
+                <div className="h-16 w-24 flex items-center justify-center">
+                  {conversationStatus === 'speaking' && <AudioVisualizer />}
+                  {conversationStatus === 'processing' && <Loader2 className="h-10 w-10 animate-spin text-blue-500" />}
+                </div>
+                <Button
+                  size="lg"
+                  className={cn("w-20 h-20 rounded-full transition-all duration-300 transform active:scale-95", {
+                    "bg-blue-500 hover:bg-blue-600": conversationStatus === 'idle',
+                    "bg-red-500 hover:bg-red-600 animate-pulse": conversationStatus === 'recording',
+                    "bg-gray-400 cursor-not-allowed": !canTalk,
+                    "opacity-0": conversationStatus === 'processing' || conversationStatus === 'speaking' // Hide button when AI is busy
+                  })}
+                  onClick={toggleRecording}
+                  disabled={!canTalk}
+                >
+                  {conversationStatus === 'recording' ? (
+                      <Square className="h-8 w-8 fill-white" />
+                  ) : (
+                      <Mic className="h-10 w-10" />
+                  )}
+                </Button>
+              </div>
+            )}
+
+            {connectionStatus === 'error' && <p className="text-red-500">Connection failed. Check permissions & console.</p>}
+          </div>
         </div>
 
         <DialogFooter>
