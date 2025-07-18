@@ -1,7 +1,7 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, AIMessage
 from app.services.appointment_workflow import appointment_workflow_manager
-from app.services.recommendation_workflow import recommendation_workflow_manager, AIMessage
+from app.services.recommendation_workflow import recommendation_workflow_manager
 from app.agent.state import AgentState
 from app.services import vector_store
 from app.tools import web_search
@@ -18,7 +18,7 @@ os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY")
 llm_gemini = ChatGoogleGenerativeAI(model=os.getenv("GEMINI_MODEL"), temperature=0)
 llm_gemini_rag = ChatGoogleGenerativeAI(
     model=os.getenv("GEMINI_MODEL"),
-    temperature=0.7,
+    temperature=0.3,
     convert_system_message_to_human=True
 )
 

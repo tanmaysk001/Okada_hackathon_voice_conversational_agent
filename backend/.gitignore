@@ -13,5 +13,5 @@ wheels/
 # Sensitive data and temporary files
 gcp_json_key/
 temp_uploads/
-.gemini/
+
 

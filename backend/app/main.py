@@ -1,23 +1,38 @@
+# backend/app/main.py
+
 import contextlib
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1.endpoints import upload, history, management, converse, audio, live_chat
+from app.api.v1.endpoints import upload, history, management, converse, audio, live_chat, chat  # Added chat
 from app.api.v1.endpoints.health import health_router
 from app.api.v1.endpoints import user_management, appointment
 from app.core.config import settings
 from app.services.database_service import connect_to_mongo, close_mongo_connection
+from app.services.recommendation_workflow import recommendation_workflow_manager
+from app.core.agents import agent_manager
+from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    # On startup
+    # --- Startup ---
+    print("Connecting to MongoDB...")
     await connect_to_mongo()
-    print("MongoDB connection established")
-    
-    yield
-    
-    # On shutdown
+    recommendation_workflow_manager.init_db()
+    print("MongoDB connection established.")
+
+    async with AsyncRedisSaver.from_conn_string(settings.REDIS_URL) as checkpointer:
+        print("Initializing Redis checkpointer...")
+        await checkpointer.asetup()
+        agent_manager.set_checkpointer(checkpointer)
+        print("Redis checkpointer initialized.")
+
+        # Let the application run
+        yield
+
+    # --- Shutdown ---
+    print("Closing MongoDB connection...")
     await close_mongo_connection()
-    print("MongoDB connection closed")
+    print("MongoDB connection closed.")
 
 # --- FastAPI App Initialization ---
 app = FastAPI(
@@ -41,16 +56,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 # --- API Routers ---
+app.include_router(chat.router, prefix="/api/v1", tags=["Chat"]) # Added chat router
 app.include_router(converse.router, prefix="/api/v1", tags=["Converse"])
 app.include_router(upload.router, prefix="/api/v1", tags=["RAG Document Upload"])
 app.include_router(history.router, prefix="/api/v1/history", tags=["History"])
 app.include_router(management.router, prefix="/api/v1", tags=["Management"])
 app.include_router(audio.router, prefix="/api/v1/audio", tags=["Audio"])
+app.include_router(user_management.router, prefix="/api/v1", tags=["User Management"])
 app.include_router(live_chat.router, prefix="/api/v1", tags=["Live Chat"])
 app.include_router(health_router, prefix="/api/v1", tags=["Health Monitoring"])
-app.include_router(user_management.router, prefix="/api/v1/users", tags=["User Management"])
 app.include_router(appointment.router, prefix="/api/v1/appointment", tags=["Appointment Booking"])
 
 # --- Root Endpoint ---

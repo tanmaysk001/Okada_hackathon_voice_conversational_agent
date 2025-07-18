@@ -1,3 +1,5 @@
+# backend/app/api/v1/endpoints/audio.py
+
 import time
 import base64
 import traceback
@@ -5,17 +7,13 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from google.cloud import speech
 from google.cloud import texttospeech
-from langchain_core.messages import HumanMessage
-from langchain_core.runnables.history import RunnableWithMessageHistory
-from app.main import agent_graph
-from langchain_core.runnables.history import RunnableWithMessageHistory
-from app.core.session import get_session_history
+from app.core.agents import agent_manager # <-- CHANGE HERE
 
 router = APIRouter()
 
 # --- Pydantic Models for API Contracts ---
 class TranscribeRequest(BaseModel):
-    audio_data: str  # Base64-encoded audio string
+    audio_data: str
 
 class TranscribeResponse(BaseModel):
     text: str
@@ -25,17 +23,11 @@ class SpeakRequest(BaseModel):
     text: str
 
 class SpeakResponse(BaseModel):
-    audio_data: str  # Base64-encoded audio string
+    audio_data: str
     tts_time: float
 
-# --- Agent Setup ---
-agent_with_history = RunnableWithMessageHistory(
-    agent_graph,
-    get_session_history,
-    input_messages_key="message",
-    history_messages_key="history",
-    output_messages_key="generation",
-)
+
+
 
 # --- API Endpoints ---
 
@@ -131,20 +123,16 @@ async def converse(request: ConverseRequest):
     # 2. LLM / RAG with History
     llm_start = time.time()
     try:
-        # Correctly structure the input for the agent
+        config = {"configurable": {"thread_id": request.session_id}}
         input_data = {
-            "message": transcript,
-            "session_id": request.session_id,
+            "messages": [("user", transcript)],
             "use_rag": request.use_rag,
             "use_web_search": request.use_web_search,
         }
-        config = {"configurable": {"session_id": request.session_id}}
-        
-        print(f"--- DEBUG: Invoking agent with history with input: {input_data} and config: {config} ---")
-        state = await agent_with_history.ainvoke(input_data, config=config)
-        print(f"--- DEBUG: Agent returned state: {state} ---")
-        
-        response_text = state["messages"][-1].content
+        agent_with_history = await agent_manager.get_agent_with_history()
+        response_state = await agent_with_history.ainvoke(input_data, config=config)
+        print(f"--- DEBUG: Agent returned state: {response_state} ---")
+        response_text = response_state["messages"][-1].content
     except Exception as e:
         print(f"--- ERROR in LLM stage: {e} ---")
         traceback.print_exc()

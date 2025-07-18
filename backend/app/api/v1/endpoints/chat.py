@@ -1,14 +1,10 @@
+# backend/app/api/v1/endpoints/chat.py
+
 import time
 import traceback
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from langchain_core.messages import HumanMessage
-from langchain_core.runnables.history import RunnableWithMessageHistory
-from app.agent.graph import create_agent_graph
-from app.core.session import get_session_history
-
-# Create the agent graph
-
+from app.core.agents import agent_manager
 
 router = APIRouter()
 
@@ -28,42 +24,27 @@ async def chat(request: ChatRequest):
     start_time = time.time()
     
     try:
-        # The input to the agent now only requires the message and other specific keys,
-        # not the entire history, which is managed by RunnableWithMessageHistory.
+        # THE FIX IS HERE: The key must match 'input_messages_key' from the agent manager.
+        # The value should be the raw string content of the message.
         input_data = {
-            "message": request.message,
-            "session_id": request.session_id,
+            "messages": request.message, # <-- CRITICAL FIX: Changed "message" to "messages"
             "use_rag": request.use_rag,
             "use_web_search": request.use_web_search,
         }
 
-        # Define the session configuration for the agent
-        config = {"configurable": {"session_id": request.session_id}}
+        # The thread_id is used by the checkpointer to save state.
+        config = {"configurable": {"session_id": request.session_id, "thread_id": request.session_id}}
 
-        # Create the agent graph and wrap it with message history
-        # Create the agent graph
-        agent_executor = create_agent_graph()
-
-        # Create the agent with message history, passing the synchronous factory function
-        agent_with_history = RunnableWithMessageHistory(
-            agent_executor,
-            get_session_history,  # Pass the synchronous factory directly
-            input_messages_key="message",
-            history_messages_key="messages",
-        )
-
-        # Invoke the agent with the input data and configuration
-        print(f"--- DEBUG: Invoking agent with history with input: {input_data} and config: {config} ---")
+        # Invoke the agent from the manager
+        agent_with_history = await agent_manager.get_agent_with_history()
         response_state = await agent_with_history.ainvoke(input_data, config=config)
-        print(f"--- DEBUG: Agent returned state: {response_state} ---")
         
-        # Extract the AI's response from the final state
-        # The response is expected in the 'messages' list, as the last message
+        # The final response is the last message in the state's message list
         response_content = response_state["messages"][-1].content
 
     except Exception as e:
         print(f"--- ERROR: Exception during chat execution: {e} ---")
-        print(traceback.format_exc()) # Print the full stack trace
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail="An error occurred during chat execution.")
 
     finally:

@@ -10,12 +10,14 @@ class Settings(BaseSettings):
     # From Project 1
     MONGO_URI: str
     MONGO_DB_NAME: str
-    GOOGLE_CALENDAR_CREDENTIALS_PATH: str
+    GEMINI_MODEL: str
+    GOOGLE_APPLICATION_CREDENTIALS: str
     CHROMA_PERSIST_DIRECTORY: str = "./user_chroma_db"
     CHROMA_HOST: Optional[str] = None
     CHROMA_PORT: Optional[int] = None
     CHROMA_COLLECTION_PREFIX: str = "okada_user_"
 
-    model_config = SettingsConfigDict(env_file=".env", extra='ignore')
+    class Config:
+        env_file = ".env"
 
 settings = Settings()

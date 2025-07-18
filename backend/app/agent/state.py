@@ -1,23 +1,20 @@
-from typing import TypedDict, List, Optional
+from typing import TypedDict, List, Optional, Annotated
 from langchain_core.messages import BaseMessage
+import operator
 
 class AgentState(TypedDict):
-    """Defines the state of the agent, including all relevant data for processing.
+    """The state of the agent.
 
     Attributes:
-        messages: A list of LangChain BaseMessages representing the conversation history.
-        session_id: A unique identifier for the user's session.
-        use_rag: A boolean flag to enable or disable Retrieval-Augmented Generation (RAG).
-        use_web_search: A boolean flag to enable or disable web searches.
-        context: A string to store context from RAG, web search, or other tools.
-        csv_intent: The classified intent of a user's query related to a CSV file, 
-                    which can be 'analytical' or 'semantic'.
-        next_node: The next node to be executed in the graph, used for conditional routing.
+        messages: The list of messages in the conversation. The `Annotated` type hint
+                  with `operator.add` tells LangGraph how to update this field.
+        context: The retrieved context for the RAG agent.
+        use_rag: A boolean flag to indicate if RAG should be used.
+        use_web_search: A boolean flag to indicate if web search should be used.
     """
-    messages: List[BaseMessage]
-    session_id: str
+    messages: Annotated[List[BaseMessage], operator.add]
+    context: Optional[str]
     use_rag: bool
     use_web_search: bool
-    context: str
     csv_intent: Optional[str]
     next_node: Optional[str]

@@ -15,7 +15,7 @@ def get_calendar_service():
     using Service Account credentials.
     """
     creds = None
-    credentials_path = settings.GOOGLE_CALENDAR_CREDENTIALS_PATH
+    credentials_path = settings.GOOGLE_APPLICATION_CREDENTIALS
 
     if not os.path.exists(credentials_path):
         raise FileNotFoundError(f"Service account key file not found at '{credentials_path}'. "

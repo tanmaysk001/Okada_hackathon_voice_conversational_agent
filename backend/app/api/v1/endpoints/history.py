@@ -41,7 +41,7 @@ def get_all_sessions():
 async def get_session_by_id(session_id: str):
     """Retrieve the full message history for a specific session ID."""
     try:
-        history = await get_session_history(session_id)
+        history = get_session_history(session_id)
         messages = await history.aget_messages()
         return [message.dict() for message in messages]
     except Exception as e:
