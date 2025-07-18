@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Literal, Dict, Any
 from datetime import datetime
 import uuid
+from app.core.logging_config import logger
 
 @dataclass
 class LiveChatConfig:
@@ -63,36 +64,36 @@ def get_rag_context_for_session(session_id: str) -> str:
     if not session_id:
         return "No session ID was provided."
         
-    print(f"Fetching RAG context for session_id: {session_id}")
+    logger.info(f"Fetching RAG context for session_id: {session_id}")
     # Retrieve more documents for a conversational context
     retriever = vector_store.get_retriever(session_id=session_id, search_kwargs={"k": 10})
     # Use a generic query to get a broad set of documents from the session
     all_docs = retriever.get_relevant_documents("all content about the uploaded documents") 
     
     if not all_docs:
-        print(f"No documents found for session_id: {session_id}")
+        logger.warning(f"No documents found for session_id: {session_id}")
         return "No documents were found for this session."
         
     context = "\n\n---\n\n".join([doc.page_content for doc in all_docs])
-    print(f"Found {len(all_docs)} document chunks for context.")
+    logger.info(f"Found {len(all_docs)} document chunks for context.")
     return context
 
 
 @router.websocket("/live-chat")
 async def live_chat(websocket: WebSocket):
-    print("[DEBUG] WebSocket endpoint called.")
+    logger.debug("WebSocket endpoint called.")
     await websocket.accept()
-    print("[DEBUG] WebSocket connection accepted.")
+    logger.debug("WebSocket connection accepted.")
 
     try:
         initial_config_raw = await websocket.receive_text()
-        print(f"[DEBUG] Received initial config raw: {initial_config_raw}")
+        logger.debug(f"Received initial config raw: {initial_config_raw}")
         initial_config = json.loads(initial_config_raw).get("config", {})
-        print(f"[DEBUG] Parsed initial config: {initial_config}")
+        logger.debug(f"Parsed initial config: {initial_config}")
         
         is_rag_enabled = initial_config.get("isRagEnabled", False)
         session_id = initial_config.get("sessionId")
-        print(f"[DEBUG] is_rag_enabled: {is_rag_enabled}, session_id: {session_id}")
+        logger.debug(f"is_rag_enabled: {is_rag_enabled}, session_id: {session_id}")
         
         system_instruction_text = "You are a friendly and helpful voice assistant. Keep your responses concise and conversational."
         history_messages = []
@@ -100,17 +101,17 @@ async def live_chat(websocket: WebSocket):
         if session_id:
             try:
                 chat_history = get_session_history(session_id)
-                print(f"[DEBUG] Got chat_history object for session_id: {session_id}")
+                logger.debug(f"Got chat_history object for session_id: {session_id}")
                 history_messages = await chat_history.aget_messages()
-                print(f"[DEBUG] Loaded {len(history_messages)} messages from history for session {session_id}")
+                logger.info(f"Loaded {len(history_messages)} messages from history for session {session_id}")
             except Exception as e:
-                print(f"[DEBUG] Error loading session history: {e}")
+                logger.error(f"Error loading session history: {e}")
                 history_messages = []
 
         system_instruction_text = "You are a friendly and helpful voice assistant. Keep your responses concise and conversational."
 
         if is_rag_enabled:
-            print("[DEBUG] Voice RAG mode enabled. Fetching context.")
+            logger.info("Voice RAG mode enabled. Fetching context.")
             # [FIX] Stronger prompt to enforce RAG
             system_instruction_text = ("You are a specialized assistant. Your task is to answer questions based exclusively on the provided document context below. "
                                        "Do not use any external knowledge. If the answer is not found in the documents, you must state that you don't have the information. Be concise.")
@@ -118,7 +119,7 @@ async def live_chat(websocket: WebSocket):
             system_instruction_text += f"\n\n--- Provided Document Context ---\n{rag_context}\n--- End of Document Context ---"
 
         if history_messages:
-            print(f"[DEBUG] Formatting {len(history_messages)} messages for history.")
+            logger.debug(f"Formatting {len(history_messages)} messages for history.")
             formatted_history = "\n\n--- Previous Conversation ---\n"
             for msg in history_messages:
                 role = "User" if msg.type == "human" else "Assistant"
@@ -126,7 +127,7 @@ async def live_chat(websocket: WebSocket):
             system_instruction_text = formatted_history + "\n\n" + system_instruction_text
 
         try:
-            print(f"[DEBUG] Creating LiveConnectConfig with final system instruction length: {len(system_instruction_text)}")
+            logger.debug(f"Creating LiveConnectConfig with final system instruction length: {len(system_instruction_text)}")
             config = LiveConnectConfig(
                 response_modalities=["AUDIO"],
                 input_audio_transcription={},
@@ -137,18 +138,18 @@ async def live_chat(websocket: WebSocket):
                 system_instruction=system_instruction_text,
                 realtime_input_config={"speech_end_timeout_millis": 2000}  # <-- put your VAD config here
             )
-            print("[DEBUG] LiveConnectConfig created successfully")
+            logger.debug("LiveConnectConfig created successfully")
         except Exception as e:
-            print(f"[DEBUG] Error creating LiveConnectConfig: {e}")
+            logger.error(f"Error creating LiveConnectConfig: {e}")
             raise
 
         try:
-            print(f"[DEBUG] Attempting to connect to Gemini Live API with model: {MODEL}")
+            logger.info(f"Attempting to connect to Gemini Live API with model: {MODEL}")
             async with client.aio.live.connect(model=MODEL, config=config) as session:
-                print("[DEBUG] Gemini Live session started.")
+                logger.info("Gemini Live session started.")
 
                 async def browser_to_gemini():
-                    print("[DEBUG] browser_to_gemini started.")
+                    logger.debug("browser_to_gemini started.")
                     while True:
                         try:
                             message = await websocket.receive_text()
@@ -162,24 +163,24 @@ async def live_chat(websocket: WebSocket):
                                 )
                                 # [DEBUG] Sent realtime audio input to Gemini. (message suppressed)
                             if "text_input" in data:
-                                print(f"[DEBUG] text_input found: {data['text_input']}")
+                                logger.debug(f"text_input found: {data['text_input']}")
                                 await session.send_text_input(data["text_input"])
-                                print("[DEBUG] Sent text input to Gemini.")
+                                logger.debug("Sent text input to Gemini.")
 
                         except WebSocketDisconnect:
-                            print("[DEBUG] WebSocketDisconnect in browser_to_gemini.")
+                            logger.warning("WebSocketDisconnect in browser_to_gemini.")
                             break
                         except Exception as e:
-                            print(f"[DEBUG] Error in browser_to_gemini: {e}")
+                            logger.error(f"Error in browser_to_gemini: {e}")
                             break
 
                 async def gemini_to_browser():
-                    print("[DEBUG] gemini_to_browser started.")
+                    logger.debug("gemini_to_browser started.")
                     ai_response_text = ""
                     while True:
                         try:
                             async for response in session.receive():
-                                print(f"[DEBUG] Received response from Gemini: {response}")
+                                logger.debug(f"Received response from Gemini: {response}")
                                 # Safely process server_content
                                 if hasattr(response, 'server_content') and response.server_content:
                                     server_content = response.server_content
@@ -187,17 +188,17 @@ async def live_chat(websocket: WebSocket):
                                     if hasattr(server_content, 'input_transcription') and server_content.input_transcription:
                                         user_text = server_content.input_transcription.text if hasattr(server_content.input_transcription, 'text') else server_content.input_transcription
                                         if user_text:
-                                            print(f"[DEBUG] User input transcription: {user_text}")
+                                            logger.info(f"User input transcription: {user_text}")
                                             await add_session_message(session_id, "user", user_text)
                                             await websocket.send_text(json.dumps({"user_transcript": user_text}))
-                                            print("[DEBUG] Sent user_transcript to browser and saved to session.")
+                                            logger.debug("Sent user_transcript to browser and saved to session.")
                                     # Handle output transcription (AI's speech)
                                     if hasattr(server_content, 'output_transcription') and server_content.output_transcription:
                                         ai_text = server_content.output_transcription.text if hasattr(server_content.output_transcription, 'text') else server_content.output_transcription
                                         if ai_text:
-                                            print(f"[DEBUG] AI output transcription: {ai_text}")
+                                            logger.info(f"AI output transcription: {ai_text}")
                                             await websocket.send_text(json.dumps({"text_response": ai_text}))
-                                            print("[DEBUG] Sent text_response to browser.")
+                                            logger.debug("Sent text_response to browser.")
                                     # Handle audio and model turn
                                     if hasattr(server_content, 'model_turn') and server_content.model_turn:
                                         for part in server_content.model_turn.parts:

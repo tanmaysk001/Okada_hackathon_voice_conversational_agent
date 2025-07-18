@@ -2,6 +2,7 @@ import logging
 import re
 import json
 import uuid
+import dateparser
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 from llama_index.core.llms import ChatMessage
@@ -12,8 +13,7 @@ from app.models.crm_models import (
     WorkflowResponse, ConfirmationUI, AppointmentError, AppointmentIntent
 )
 from app.services.database_service import get_database
-
-logger = logging.getLogger(__name__)
+from app.core.logging_config import logger
 
 class AppointmentIntentDetectionService:
     APPOINTMENT_TRIGGERS = [
@@ -45,7 +45,8 @@ class AppointmentIntentDetectionService:
         'location': [
             r"\bat\s+(the\s+)?(office|building|location|address|room\s+\d+)\b",
             r"\bin\s+(the\s+)?(conference room|meeting room|office)\b",
-            r"\bat\s+([A-Za-z0-9\s,.-]+(?:street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr))\b"
+            # More specific address regex to avoid false positives
+            r"\b(\d+\s+[a-zA-Z0-9\s,.-]+(?:street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|ln|lane|ct|court|pl|place))\b"
         ],
         'email': [
             r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
@@ -80,18 +81,34 @@ class AppointmentIntentDetectionService:
         )
     
     def extract_appointment_details(self, message: str) -> Dict[str, Any]:
+        """Extracts appointment details using a combination of regex and dateparser."""
         details = {}
         message_lower = message.lower()
+
+        # Use dateparser for robust date/time extraction
+        parsed_date = dateparser.parse(message, settings={'PREFER_DATES_FROM': 'future', 'RETURN_AS_TIMEZONE_AWARE': False})
+        if parsed_date:
+            details['datetime'] = parsed_date
+            details['date'] = parsed_date.strftime('%Y-%m-%d')
+            details['time'] = parsed_date.strftime('%I:%M %p')
+
+        # Use regex for other details
         for detail_type, patterns in self.DETAIL_PATTERNS.items():
+            # Skip date/time as it's handled by dateparser
+            if detail_type in ['date', 'time']:
+                continue
+
             for pattern in patterns:
                 matches = re.findall(pattern, message_lower, re.IGNORECASE)
                 if matches:
                     if detail_type == 'email':
                         details[detail_type] = [match if isinstance(match, str) else match[0] for match in matches]
                     else:
+                        # Handle cases where regex returns tuples from capture groups
                         match_value = matches[0] if isinstance(matches[0], str) else matches[0][0]
-                        details[detail_type] = match_value
-                    break
+                        details[detail_type] = match_value.strip()
+                    break # Move to the next detail type once a match is found
+
         logger.info(f"Extracted appointment details: {details}")
         return details
     

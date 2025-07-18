@@ -64,7 +64,7 @@ async def upload_rag_docs(session_id: str = Form(...), file: UploadFile = File(.
         vector_store.add_documents_to_store(documents, session_id)
 
         # 4. Mark that a RAG file is active for this session
-        set_session_file_info(session_id, file_type='rag', file_path=file_path)
+        await set_session_file_info(session_id, file_type='rag', file_path=file_path)
 
         # 5. Store the filename in Redis for this session
         try:

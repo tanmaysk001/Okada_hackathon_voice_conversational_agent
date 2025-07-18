@@ -61,6 +61,7 @@ class ChatMessage(BaseModel):
 
 class ConversationHistory(BaseModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
+    session_id: str
     user_email: EmailStr
     messages: List[ChatMessage]
     tags: List[str] = Field(default_factory=list)
@@ -594,3 +595,22 @@ class StorageResult:
     data_migrated: bool
     storage_optimized: bool
     timestamp: dt.datetime
+
+# Add these two classes to the end of backend/app/models/crm_models.py
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+class ConversationHistory(BaseModel):
+    id: Optional[PyObjectId] = Field(alias="_id", default=None)
+    user_email: EmailStr
+    messages: List[ChatMessage]
+    tags: List[str] = Field(default_factory=list)
+    created_at: dt.datetime = Field(default_factory=dt.datetime.utcnow)
+    updated_at: dt.datetime = Field(default_factory=dt.datetime.utcnow)
+
+class Config:
+    arbitrary_types_allowed = True
+    json_encoders = {ObjectId: str}
+    populate_by_name = True

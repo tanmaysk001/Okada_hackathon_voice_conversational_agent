@@ -10,42 +10,38 @@ export interface Message {
   content: string;
 }
 
-export const useChat = (sessionId: string) => {
+export const useChat = (sessionId: string, userEmail: string) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const loadChatHistory = async () => {
-      if (!sessionId) return;
+      if (!sessionId || !userEmail) return;
       setIsLoading(true);
       try {
-        const response = await fetch(`http://localhost:8000/api/v1/history/sessions/${sessionId}`);
-        // A new chat won't have history, so a 404 or other error is expected.
-        // We'll only load messages if the request is successful.
+        const response = await fetch(`http://localhost:8000/api/v1/history/session/${sessionId}?user_email=${encodeURIComponent(userEmail)}`);
         if (response.ok) {
           const history = await response.json();
-          // The API returns BaseMessage objects, we need to format them for the UI
           const formattedHistory = history.map((msg: any) => ({
-            id: msg.id || uuidv4(), // Ensure there's an ID
-            role: msg.type === 'human' ? 'user' : 'assistant',
+            id: msg.id || uuidv4(),
+            role: msg.role === 'human' ? 'user' : msg.role,
             content: msg.content,
           }));
           setMessages(formattedHistory);
         } else {
-          // This is likely a new chat, so we start with a clean slate.
           setMessages([]);
         }
       } catch (error) {
         console.error('Failed to fetch chat history:', error);
-        setMessages([]); // Start fresh on error
+        setMessages([]);
       } finally {
         setIsLoading(false);
       }
     };
 
     loadChatHistory();
-  }, [sessionId]); // This effect re-runs whenever the session ID changes
+  }, [sessionId, userEmail]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInput(e.target.value);
@@ -70,6 +66,7 @@ export const useChat = (sessionId: string) => {
     try {
       const response = await apiClient.post('/chat', {
         session_id: sessionId,
+        user_email: userEmail,
         message: input,
         use_rag: isRagEnabled,
         use_web_search: isWebSearchEnabled,
@@ -116,12 +113,26 @@ export const useChat = (sessionId: string) => {
       
       toast.success(result.message || 'File uploaded successfully!', { id: uploadToastId });
       
+      const systemMessageContent = `File "${file.name}" uploaded successfully. You can now enable the "Query Uploaded Files" switch to ask questions about it.`;
       const systemMessage: Message = {
         id: uuidv4(),
         role: 'system',
-        content: `File "${file.name}" uploaded successfully. You can now enable the "Query Uploaded Files" switch to ask questions about it.`,
+        content: systemMessageContent,
       };
       setMessages(prev => [...prev, systemMessage]);
+
+      // Also send this system message to the backend to be saved in history
+      try {
+        await apiClient.post('/chat', {
+          session_id: sessionId,
+          user_email: userEmail,
+          message: `(System: Uploaded file ${file.name})`, // User message is a system note
+          use_rag: false, // This is not a user query
+          use_web_search: false,
+        });
+      } catch (error) {
+        console.error('Failed to save upload notification to chat history:', error);
+      }
 
       // Notify the UI that a file has been uploaded so the list can refresh
       window.dispatchEvent(new CustomEvent('file-uploaded'));

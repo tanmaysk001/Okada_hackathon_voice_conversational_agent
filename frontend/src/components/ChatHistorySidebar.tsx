@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useUser } from '../context/UserContext'; // Import the useUser hook
 
 interface Session {
   session_id: string;
@@ -15,24 +16,36 @@ interface ChatHistorySidebarProps {
 const ChatHistorySidebar: React.FC<ChatHistorySidebarProps> = ({ onSelectSession, onNewChat, onDeleteSession, currentSessionId }) => {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const { user } = useUser(); // Get the authenticated user
 
-  const fetchSessions = async () => {
+  const fetchSessions = useCallback(async () => {
+    if (!user?.email) {
+      setSessions([]); // Clear sessions if no user is logged in
+      return;
+    }
     try {
-      const response = await fetch('http://localhost:8000/api/v1/history/sessions');
+      setError(null);
+      const response = await fetch(`http://localhost:8000/api/v1/history/sessions/${user.email}`);
       if (!response.ok) {
+        // A 404 is not necessarily an error to display, it could just mean no history.
+        if (response.status === 404) {
+          setSessions([]);
+          return;
+        }
         throw new Error('Failed to fetch chat sessions.');
       }
       const data = await response.json();
       setSessions(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+      setError(errorMessage);
       console.error("Error fetching sessions:", err);
     }
-  };
+  }, [user?.email]);
 
   useEffect(() => {
     fetchSessions();
-  }, [currentSessionId]); // Refetch when session changes
+  }, [fetchSessions, currentSessionId]); // Refetch when session changes or user logs in
 
   // Expose a refetch function to be called after deletion
   useEffect(() => {

@@ -98,7 +98,7 @@ export const useLiveVoiceChat = (isRagEnabled: boolean, isWebSearchEnabled: bool
   const connect = useCallback(() => {
     if (socketRef.current || connectionStatus === 'connecting') return;
     setConnectionStatus('connecting');
-    const ws = new WebSocket(`ws://localhost:8000/ws/v1/live-chat`);
+    const ws = new WebSocket(`ws://localhost:8000/api/v1/live-chat`);
 
     ws.onopen = () => {
       // --- [NEW] Send initial configuration on connect ---

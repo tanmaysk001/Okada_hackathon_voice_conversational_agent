@@ -1,4 +1,5 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import AIMessage
 from langchain_core.messages import HumanMessage, AIMessage
 from app.services.appointment_workflow import appointment_workflow_manager
 from app.services.recommendation_workflow import recommendation_workflow_manager
@@ -29,9 +30,27 @@ def agent_entry(state: AgentState) -> AgentState:
     return state
 
 def generate_direct(state: AgentState) -> dict:
-    """Generates a response directly without any tools or context."""
-    last_message = state["messages"][-1]
-    response = llm_gemini.invoke([last_message])
+    """
+    Generates a response directly using the full conversation history.
+    If the conversation is new, it provides a greeting.
+    If the last message is from the AI, it passes it through to avoid errors.
+    """
+    messages = state["messages"]
+
+    # 1. Handle a new, empty conversation
+    if not messages:
+        greeting = "Hello! I'm your Okada Leasing assistant. How can I help you today?"
+        return {"messages": [AIMessage(content=greeting)]}
+
+    # 2. Safety Check: If the last message is already from the AI, do nothing.
+    #    This prevents the "must end with a user role" error.
+    last_message = messages[-1]
+    if isinstance(last_message, AIMessage):
+        # Pass the state through without modification
+        return {"messages": []} # Returning an empty list won't add new messages
+
+    # 3. If the last message is from the user, invoke the LLM with the full history
+    response = llm_gemini.invoke(messages) # <-- Pass the entire history
     return {"messages": [response]}
 
 def retrieve_from_rag(state: AgentState) -> dict:

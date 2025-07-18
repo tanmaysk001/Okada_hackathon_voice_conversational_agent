@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useUser } from '@/context/UserContext';
 import { useChat } from '@/hooks/useChat';
 import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
@@ -17,6 +18,7 @@ interface ChatLayoutProps {
 
 export function ChatLayout({ sessionId: initialSessionId }: ChatLayoutProps) {
   const [currentSessionId, setCurrentSessionId] = useState(initialSessionId);
+  const { user } = useUser();
 
   // The useChat hook now handles loading history based on the session ID.
   const {
@@ -26,7 +28,7 @@ export function ChatLayout({ sessionId: initialSessionId }: ChatLayoutProps) {
     handleInputChange,
     sendMessage,
     uploadFile,
-  } = useChat(currentSessionId);
+  } = useChat(currentSessionId, user?.email || '');
   
   const [isTextRagEnabled, setIsTextRagEnabled] = useState(false);
   const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(false);

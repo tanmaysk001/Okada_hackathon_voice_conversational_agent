@@ -3,7 +3,7 @@
 import contextlib
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1.endpoints import upload, history, management, converse, audio, live_chat, chat  # Added chat
+from app.api.v1.endpoints import upload, history, management, audio, live_chat, chat  # Added chat
 from app.api.v1.endpoints.health import health_router
 from app.api.v1.endpoints import user_management, appointment
 from app.core.config import settings
@@ -58,7 +58,6 @@ app.add_middleware(
 
 # --- API Routers ---
 app.include_router(chat.router, prefix="/api/v1", tags=["Chat"]) # Added chat router
-app.include_router(converse.router, prefix="/api/v1", tags=["Converse"])
 app.include_router(upload.router, prefix="/api/v1", tags=["RAG Document Upload"])
 app.include_router(history.router, prefix="/api/v1/history", tags=["History"])
 app.include_router(management.router, prefix="/api/v1", tags=["Management"])
