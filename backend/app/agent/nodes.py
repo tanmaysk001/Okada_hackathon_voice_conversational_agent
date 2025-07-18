@@ -1,3 +1,20 @@
+# Add this near the top of backend/app/agent/nodes.py with other definitions
+
+OKADA_SYSTEM_PROMPT = """You are a specialized, professional, and friendly **commercial real estate** assistant for Okada.
+
+Your primary purpose is to assist users with inquiries related to Okada's business, which includes:
+- Answering questions about **commercial property listings** using provided documents (RAG).
+- Providing **commercial property** recommendations from Okada's internal database.
+- Booking property viewing appointments.
+- Scheduling maintenance appointments for existing tenants.
+- Searching the web for information specifically about New York City when relevant to a user's query.
+
+Rules:
+- If a user greets you, respond with: "Hello! I'm your Okada Leasing assistant for commercial properties. How can I help you today?"
+- If the user asks about your capabilities, briefly list your main functions.
+- If the user asks a question NOT related to commercial real estate, Okada's business, or New York City, you must politely decline.
+"""
+
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import AIMessage
 from langchain_core.messages import HumanMessage, AIMessage
@@ -31,32 +48,44 @@ def agent_entry(state: AgentState) -> AgentState:
 
 def generate_direct(state: AgentState) -> dict:
     """
-    Generates a response directly using the full conversation history.
-    If the conversation is new, it provides a greeting.
-    If the last message is from the AI, it passes it through to avoid errors.
+    Generates a response directly, anchored by the Okada system prompt.
     """
+    print("--- Node: Direct Generation ---")
     messages = state["messages"]
 
-    # 1. Handle a new, empty conversation
-    if not messages:
-        greeting = "Hello! I'm your Okada Leasing assistant. How can I help you today?"
-        return {"messages": [AIMessage(content=greeting)]}
+    # If the last message is from the AI, pass through to avoid errors.
+    if messages and isinstance(messages[-1], AIMessage):
+        return {"messages": []}
 
-    # 2. Safety Check: If the last message is already from the AI, do nothing.
-    #    This prevents the "must end with a user role" error.
-    last_message = messages[-1]
-    if isinstance(last_message, AIMessage):
-        # Pass the state through without modification
-        return {"messages": []} # Returning an empty list won't add new messages
+    # Prepend the system prompt to the user's query
+    # We combine the system prompt with the latest user message for a focused generation
+    user_query = messages[-1].content
+    prompt_messages = [
+        HumanMessage(content=f"{OKADA_SYSTEM_PROMPT}\n\nUSER QUESTION: {user_query}")
+    ]
 
-    # 3. If the last message is from the user, invoke the LLM with the full history
-    response = llm_gemini.invoke(messages) # <-- Pass the entire history
+    # Invoke the LLM with the specific prompt
+    response = llm_gemini.invoke(prompt_messages)
     return {"messages": [response]}
 
-def retrieve_from_rag(state: AgentState) -> dict:
+def retrieve_from_rag(state: AgentState, config: dict) -> dict:
     """Retrieves relevant documents from the vector store."""
     user_query = state["messages"][-1].content
     session_id = state.get("session_id")
+
+    # --- ROBUSTNESS FIX ---
+    # If session_id is missing from the state, extract it from the config's thread_id.
+    # This is a fallback for when the initial state isn't populated correctly.
+    if not session_id:
+        print("Warning: session_id missing from state. Attempting fallback from config.")
+        configurable = config.get("configurable", {})
+        session_id = configurable.get("thread_id") # thread_id is the session_id
+        if session_id:
+            print(f"Success: Found session_id in config: {session_id}")
+            state["session_id"] = session_id # Persist it in the state for subsequent nodes
+        else:
+            print("Error: Could not find session_id in state or config. RAG will fail.")
+
     retriever = vector_store.get_retriever(session_id=session_id)
     retrieved_docs = retriever.invoke(user_query)
     
@@ -77,10 +106,17 @@ def retrieve_from_rag(state: AgentState) -> dict:
     return {"context": context}
 
 def run_web_search(state: AgentState) -> dict:
-    """Executes a web search and formats the results as context."""
+    """Executes a web search scoped to New York City and formats the results."""
+    print("--- Node: Web Search ---")
     user_query = state["messages"][-1].content
+    
+    # ** THE FIX IS HERE **
+    # Append "in New York City" to the query to constrain the search.
+    scoped_query = f"{user_query} in New York City"
+    print(f"Original query: '{user_query}', Scoped query: '{scoped_query}'")
+
     search_tool = web_search.get_web_search_tool()
-    search_results = search_tool.invoke({"query": user_query})
+    search_results = search_tool.invoke({"query": scoped_query}) # Use the scoped query
 
     if isinstance(search_results, (list, tuple)):
         joined_results = "\n\n".join([str(r) for r in search_results])
@@ -90,94 +126,99 @@ def run_web_search(state: AgentState) -> dict:
     context = f"Source: From a web search.\n\n{joined_results}"
     return {"context": context}
 
+# =================================================================
+# REPLACEMENT #1: The Triage Function
+# =================================================================
+async def triage_query(state: AgentState) -> str:
+    """
+    Intelligently routes the user's query. This is the simple, robust fix.
+    """
+    print("--- Triage Node (Robust Fix) ---")
+    use_rag = state.get("use_rag", False)
+    use_web = state.get("use_web_search", False)
+
+    # --- THE CORE FIX IS HERE ---
+    # If the user has RAG mode enabled, we ALWAYS go to the retrieval step first.
+    # The decision of what to do if no documents are found is handled later.
+    if use_rag:
+        print("Routing Decision: RAG is enabled, attempting document retrieval.")
+        return "retrieve_from_rag"
+
+    # --- Fallback logic if RAG is turned off by the user ---
+    if use_web:
+        print("Routing Decision: RAG is off, using web search.")
+        return "run_web_search"
+    
+    print("Routing Decision: RAG and Web Search are off, using direct generation.")
+    return "generate_direct"
+
+
+# =================================================================
+# REPLACEMENT #2: The Post-RAG Routing Function
+# =================================================================
+def route_after_rag(state: AgentState) -> dict:
+    """
+    Decides the next step after attempting RAG retrieval. This is the crucial fallback logic.
+    """
+    print("--- Post-RAG Router (Robust Fix) ---")
+    context = state.get("context", "")
+    use_web_search = state.get("use_web_search", False)
+
+    # --- THE SECOND CORE FIX IS HERE ---
+    if context and context.strip():
+        # If we have context, we MUST use it to generate a response.
+        print("Decision: Context FOUND. Routing to generate_with_context.")
+        return {"next_node": "generate_with_context"}
+    else:
+        # If RAG returned no results, tell the user and then decide what to do.
+        print("Decision: Context NOT found.")
+        
+        # Create a message to inform the user what's happening.
+        no_context_message = AIMessage(
+            content="I could not find any relevant information in your uploaded documents for that query. I will answer from my general knowledge."
+        )
+        # Add the message to the state history.
+        state["messages"].append(no_context_message)
+        
+        # Now, decide the fallback path.
+        if use_web_search:
+            print("Fallback: Web Search.")
+            return {"next_node": "run_web_search"}
+        else:
+            print("Fallback: Direct Generation.")
+            return {"next_node": "generate_direct"}
+
+
+# =================================================================
+# REPLACEMENT #3: The Strict Context Generation Function
+# =================================================================
 def generate_with_context(state: AgentState) -> dict:
-    """Generates a response using the context retrieved from RAG or web search."""
+    """
+    Generates a response using the context. The prompt is now extremely strict
+    to prevent the model from using outside knowledge.
+    """
+    print("--- Generating with Context (Robust Fix) ---")
     user_query = state["messages"][-1].content
     context = state.get("context", "")
     
-    prompt = f'''You are a helpful assistant. Answer the user's question based *only* on the information provided in the context below.
+    # --- THE THIRD CORE FIX: THE STRICT PROMPT ---
+    prompt = f'''You are a helpful assistant. Your task is to answer the user's question based ONLY on the information provided in the "CONTEXT" section below.
 
-    If the context does not contain the answer, state that you could not find the information in the provided sources.
+You are forbidden from using any external knowledge. You must not answer if the information is not present in the context.
 
-    CONTEXT:
-    ---
-    {context}
-    ---
+CONTEXT:
+---
+{context}
+---
 
-    Based on the context above, please answer the following question:
-    USER'S QUESTION: "{user_query}"
-    '''
+If the context does not contain the answer to the user's question, you MUST respond with EXACTLY this phrase: "I could not find the answer in the provided documents."
+
+Based *only* on the context above, answer this question:
+USER'S QUESTION: "{user_query}"
+'''
     new_message = HumanMessage(content=prompt)
     response = llm_gemini_rag.invoke([new_message])
     return {"messages": [response]}
-
-async def triage_query(state: AgentState) -> str:
-    """
-    Intelligently routes the user's query to the correct tool or workflow.
-    This is the agent's main decision-making node.
-    """
-    print("--- Triage Node: Classifying Query ---")
-    # Ensure 'messages' is a list and get the last message's content
-    messages = state.get("messages", [])
-    if not messages:
-        # Handle case where there are no messages
-        print("No messages in state, routing to direct generation.")
-        return "generate_direct"
-    user_message = messages[-1].content
-    session_id = state.get("session_id")
-    
-    # Use the fast classifier for initial categorization
-    classifier = FastMessageClassifier()
-    classification = classifier.classify_message(user_message)
-    
-    print(f"Fast Classification: {classification.message_type.value}, Strategy: {classification.processing_strategy.value}")
-    
-    # Route based on the determined strategy
-    if classification.processing_strategy == ProcessingStrategy.APPOINTMENT_WORKFLOW:
-        print("Routing to: Appointment Workflow")
-        return "handle_scheduling"
-        
-    if classification.processing_strategy == ProcessingStrategy.PROPERTY_WORKFLOW:
-        print("Routing to: Recommendation Workflow")
-        return "handle_recommendation"
-
-    # Fallback to original logic for RAG, Web Search, or Direct Chat
-    use_rag = state.get("use_rag", False)
-    use_web = state.get("use_web_search", False)
-    file_info = await get_session_file_info(session_id)
-
-    if use_rag and file_info and file_info.get("file_path"):
-        file_path = file_info["file_path"]
-        if file_path.lower().endswith('.csv'):
-            print("Routing to: CSV Tool")
-            return "query_csv_tool"
-        else:
-            print("Routing to: RAG Retrieval")
-            return "retrieve_from_rag"
-
-    if use_web:
-        print("Routing to: Web Search")
-        return "run_web_search"
-    
-    print("Routing to: Direct Generation")
-    return "generate_direct"
-
-def route_after_rag(state: AgentState) -> dict:
-    """Decides the next step after attempting RAG or web search."""
-    context = state.get("context", "")
-    next_node = ""
-    if context and context.strip():
-        # If we have context, use it to generate a response
-        next_node = "generate_with_context"
-    else:
-        # If RAG returned no results, decide whether to fallback to web search
-        if state.get("use_web_search"):
-            next_node = "run_web_search"
-        else:
-            # If no context and no web search, generate a direct response
-            next_node = "generate_direct"
-    # The return value must be a dictionary to update the state correctly
-    return {"next_node": next_node}
 
 def classify_csv_intent(state: AgentState) -> dict:
     """Classifies the user's query for a CSV file as 'semantic' or 'analytical' to decide the routing."""
@@ -223,44 +264,86 @@ def query_csv_tool(state: AgentState) -> dict:
     return {"messages": [AIMessage(content=response_text)]}
 
 async def handle_scheduling(state: AgentState) -> dict:
-    """Handles the appointment scheduling workflow."""
+    """Handles both viewing and maintenance appointments by starting the workflow with the correct context."""
     print("--- Node: Handling Scheduling ---")
     user_message = state["messages"][-1].content
-    user_id = state.get("session_id") # Using session_id as the user identifier
+    user_id = state.get("session_id")
+    strategy = state.get("processing_strategy")
 
-    # This node will now properly manage the appointment workflow.
-    # It checks for an active session or starts a new one.
-    from app.services.database_service import get_database
-    db = get_database()
-    session_collection = db["appointment_sessions"]
-    active_session = await session_collection.find_one({
-        "user_id": user_id,
-        "status": {"$in": ["collecting_info", "confirming"]}
-    })
-
-    if active_session:
-        workflow_response = await appointment_workflow_manager.process_user_response(
-            session_id=active_session["_id"],
-            user_response=user_message
-        )
+    # Determine the title based on the routing strategy
+    if strategy == ProcessingStrategy.MAINTENANCE_WORKFLOW.value:
+        initial_title = f"Maintenance Request"
+        # Try to get more specific from the user's message
+        match = re.search(r'(fix|repair|broken|leaking|issue with)\s+(?:my\s+)?(.*)', user_message, re.IGNORECASE)
+        if match and match.group(2):
+            initial_title += f": {match.group(2).strip()}"
     else:
-        workflow_response = await appointment_workflow_manager.start_appointment_booking(
-            user_id=user_id,
-            message=user_message
-        )
+        initial_title = "Property Viewing"
+    
+    print(f"Starting appointment workflow with initial title: '{initial_title}'")
+
+    # Use the existing appointment workflow manager, but pass the dynamic title
+    workflow_response = await appointment_workflow_manager.start_appointment_booking(
+        user_id=user_id,
+        message=user_message,
+        initial_title=initial_title  # Pass the context-aware title
+    )
     
     response_text = workflow_response.message
     return {"messages": [AIMessage(content=response_text)]}
 
+
+
+
+from app.services import property_service # Make sure this import is at the top of the file
+
 async def handle_recommendation(state: AgentState) -> dict:
-    """Handles the property recommendation workflow."""
-    print("--- Node: Handling Recommendation ---")
-    user_message = state["messages"][-1].content
-    user_id = state.get("session_id")
+    """
+    This is the new, intelligent recommendation node. It has access to the full
+    conversation history and follows a strict, proactive script.
+    """
+    print("--- Node: Handling Recommendation (Demo-Proof Fix) ---")
+    
+    # 1. Get the full conversation history to understand all context
+    full_history = "\n".join([f"{msg.type}: {msg.content}" for msg in state["messages"]])
+    latest_user_query = state["messages"][-1].content
 
-    # This node will manage the recommendation workflow.
-    workflow_session = await recommendation_workflow_manager.start_recommendation_workflow(user_id=user_id, message=user_message)
-    next_step = await recommendation_workflow_manager.get_next_step(workflow_session.session_id)
-    response_text = next_step.response_message if next_step else "I'm ready to find some properties for you! What are you looking for?"
+    try:
+        # 2. Use our resilient service to get property data from MongoDB
+        context_str = await property_service.get_properties_as_text(latest_user_query)
 
-    return {"messages": [AIMessage(content=response_text)]}
+        if "No properties were found" in context_str:
+            return {"messages": [AIMessage(content="I'm sorry, but I couldn't find any properties in our database right now. Please check back later.")]}
+
+        # 3. --- THE DEMO-WINNING PROMPT ---
+        prompt = f"""You are a professional and proactive commercial real estate assistant for Okada. Your ONLY task is to help the user find a property from the internal database and book a viewing.
+
+        **Full Conversation History (for context):**
+        ---
+        {full_history}
+        ---
+
+        **Available Property Information from Okada's Database:**
+        ---
+        {context_str}
+        ---
+
+        **Your Instructions (Follow Exactly):**
+        1.  Analyze the user's request using the FULL conversation history to understand all requirements (location, budget, etc.).
+        2.  If the database results do not perfectly match, acknowledge it briefly (e.g., "While I couldn't find an exact match for your budget, I did find a great option nearby...").
+        3.  Select the SINGLE BEST property from the list to recommend.
+        4.  Present the details of this single best property in a friendly, concise summary.
+        5.  Your response MUST mention the assigned associate by name from the data (e.g., "The associate for this property is Jack Sparrow.").
+        6.  Your response MUST end with a proactive question to book a viewing with that specific associate. For example: "I can set up an appointment with the property associate, Jack Sparrow, for you. Would you like me to proceed?"
+        
+        **DO NOT** ask for information you already have from the history.
+        **DO NOT** say you cannot access the database. Your goal is to recommend one property and book a viewing.
+        """
+
+        # 4. Call the LLM
+        response = llm_gemini.invoke([HumanMessage(content=prompt)])
+        return {"messages": [response]}
+
+    except Exception as e:
+        logger.error(f"Error in handle_recommendation: {e}")
+        return {"messages": [AIMessage(content="I'm sorry, I encountered an error while looking for recommendations. Please try again.")]}

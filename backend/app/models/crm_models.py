@@ -38,6 +38,7 @@ class User(BaseModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
     full_name: str
     email: EmailStr
+    hashed_password: Optional[str] = None
     company_id: Optional[PyObjectId] = None
     preferences: Dict = Field(default_factory=dict)
     scheduled_events: List[str] = Field(default_factory=list) # To store event URLs
@@ -198,6 +199,7 @@ class AppointmentData:
     duration_minutes: int = 60
     attendee_emails: List[str] = field(default_factory=list)
     description: Optional[str] = None
+    calendar_event_link: Optional[str] = None
     meet_link: Optional[str] = None
     calendar_event_id: Optional[str] = None
     organizer_email: Optional[str] = None
@@ -247,9 +249,10 @@ class MessageType(str, Enum):
 
 class ProcessingStrategy(str, Enum):
     QUICK_RESPONSE = "quick_response"
-    DIRECT_SEARCH = "direct_search"  # For direct property queries like "top 3 properties"
+    DIRECT_SEARCH = "direct_search"
     PROPERTY_WORKFLOW = "property_workflow"
     APPOINTMENT_WORKFLOW = "appointment_workflow"
+    MAINTENANCE_WORKFLOW = "maintenance_workflow" # <-- ADD THIS LINE
     FALLBACK_RESPONSE = "fallback_response"
 
 @dataclass

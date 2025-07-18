@@ -11,6 +11,7 @@ class AgentState(TypedDict):
         context: The retrieved context for the RAG agent.
         use_rag: A boolean flag to indicate if RAG should be used.
         use_web_search: A boolean flag to indicate if web search should be used.
+        processing_strategy: The strategy used for processing the intent.
     """
     messages: Annotated[List[BaseMessage], operator.add]
     context: Optional[str]
@@ -18,3 +19,4 @@ class AgentState(TypedDict):
     use_web_search: bool
     csv_intent: Optional[str]
     next_node: Optional[str]
+    processing_strategy: Optional[str]

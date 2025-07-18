@@ -53,6 +53,12 @@ class FastMessageClassifier:
         r'\b(just\s+chatting|just\s+saying\s+hi|checking\s+in)\b',
         r'\b(have\s+a\s+good\s+day|take\s+care|bye|goodbye)\b'
     ]
+
+    MAINTENANCE_PATTERNS = [
+        r'\b(fix|repair|broken|leaking|issue|problem)\b',
+        r'\b(maintenance|plumbing|electricity|heating|ac|not working)\b',
+        r'\b(send|schedule)\s+(a\s+)?(technician|handyman|plumber|electrician)\b'
+    ]
     
     def __init__(self):
         self.compiled_greetings = [re.compile(pattern, re.IGNORECASE) for pattern in self.GREETING_PATTERNS]
@@ -61,12 +67,26 @@ class FastMessageClassifier:
         self.compiled_property = [re.compile(pattern, re.IGNORECASE) for pattern in self.PROPERTY_SEARCH_PATTERNS]
         self.compiled_appointment = [re.compile(pattern, re.IGNORECASE) for pattern in self.APPOINTMENT_PATTERNS]
         self.compiled_conversational = [re.compile(pattern, re.IGNORECASE) for pattern in self.CONVERSATIONAL_PATTERNS]
+        self.compiled_maintenance = [re.compile(pattern, re.IGNORECASE) for pattern in self.MAINTENANCE_PATTERNS]
         self.classification_times = []
     
     def classify_message(self, message: str, user_context: Optional[ConversationalContext] = None) -> MessageClassification:
         start_time = time.time()
         try:
             normalized_message = self._normalize_message(message)
+
+            # ** NEW LOGIC HERE **
+            # Check for maintenance intent first, as it's very specific
+            if any(p.search(normalized_message) for p in self.compiled_maintenance):
+                return MessageClassification(
+                    message_type=MessageType.APPOINTMENT_REQUEST,
+                    confidence=0.9,
+                    processing_strategy=ProcessingStrategy.MAINTENANCE_WORKFLOW, # Route to our new workflow
+                    estimated_response_time=3000.0,
+                    requires_index=False,
+                    reasoning="Maintenance keyword detected"
+                )
+
             classification_results = self._run_all_classifications(normalized_message)
             best_classification = self._select_best_classification(classification_results, user_context)
             duration_ms = (time.time() - start_time) * 1000

@@ -14,6 +14,7 @@ from app.models.crm_models import (
 )
 from app.services.database_service import get_database
 from app.core.logging_config import logger
+from app.services.calendar_service import create_calendar_event
 
 class AppointmentIntentDetectionService:
     APPOINTMENT_TRIGGERS = [
@@ -167,12 +168,12 @@ class AppointmentWorkflowManager:
     def __init__(self):
         pass
     
-    async def start_appointment_booking(self, user_id: str, message: str) -> WorkflowResponse:
-        logger.info(f"Starting appointment booking for user {user_id}")
+    async def start_appointment_booking(self, user_id: str, message: str, initial_title: Optional[str] = None) -> WorkflowResponse:
+        logger.info(f"Starting appointment booking for user {user_id} with title: {initial_title}")
         try:
-            intent_result = await apointment_intent_detection_service.detect_appointment_intent(message)
+            intent_result = await appointment_intent_detection_service.detect_appointment_intent(message)
             appointment_data = AppointmentData(
-                title="Meeting",
+                title=initial_title or "Okada Property Viewing",
                 location="",
                 date=datetime.now(),
                 organizer_email=user_id
@@ -271,11 +272,23 @@ class AppointmentWorkflowManager:
             session = await self._load_session(session_id)
             if not session:
                 return WorkflowResponse(success=False, message="Appointment session not found.", error_details=AppointmentError(error_type="SESSION_NOT_FOUND", message="Session not found"))
+            appointment = session.collected_data
+
+            try:
+                meet_link = create_calendar_event(appointment, session.user_id)
+                appointment.calendar_event_link = meet_link
+            except Exception as e:
+                logger.error(f"Failed to create calendar event for session {session_id}: {e}")
+                # The appointment is confirmed in our system, but calendar event failed.
+                # We'll proceed but the user won't get a meet link in the response.
+
             session.status = AppointmentStatus.CONFIRMED
             session.updated_at = datetime.now()
-            appointment = session.collected_data
             await self._save_session(session)
+
             formatted_date = appointment.date.strftime("%A, %B %d, %Y at %I:%M %p")
+            link_message = f"\nYou can join the meeting here: {appointment.calendar_event_link}" if appointment.calendar_event_link else "\n\nYou will receive a calendar invitation to your email shortly."
+
             success_message = f"""🎉 **Appointment Confirmed!**
 
 Your appointment has been successfully scheduled:
@@ -283,9 +296,7 @@ Your appointment has been successfully scheduled:
 📋 **{appointment.title}**
 📍 **Location:** {appointment.location}
 🕐 **Date & Time:** {formatted_date}
-⏱️ **Duration:** {appointment.duration_minutes} minutes
-
-You will receive a calendar invitation shortly with all the details and a Google Meet link for the meeting.""".strip()
+⏱️ **Duration:** {appointment.duration_minutes} minutes{link_message}""".strip()
             return WorkflowResponse(success=True, message=success_message, session_id=session_id, step_name="appointment_confirmed", appointment_data=appointment)
         except Exception as e:
             logger.error(f"Error confirming appointment: {e}")
@@ -393,9 +404,13 @@ Would you like me to confirm this appointment?""".strip()
                 return
         intent_result = await apointment_intent_detection_service.detect_appointment_intent(user_response)
         self._apply_extracted_details(session.collected_data, intent_result.extracted_details)
-        if (session.status == AppointmentStatus.COLLECTING_INFO and (not session.collected_data.location or session.collected_data.location.strip() == "")):
+        if session.status == AppointmentStatus.COLLECTING_INFO and not session.collected_data.location:
+            # If we are missing a location, and the user response looks like one, use it.
+            # This avoids re-running full intent detection on a simple location answer.
             if (any(word in user_response.lower() for word in ['office', 'building', 'room', 'address', 'virtual', 'zoom', 'meet', 'street', 'st', 'avenue', 'ave', 'road', 'rd', 'boulevard', 'blvd', 'drive', 'dr']) or self._looks_like_address(user_response)) and not any(phrase in user_response.lower() for phrase in ['schedule', 'appointment', 'meeting', 'book', 'arrange', 'set up']):
+                logger.info(f"Directly assigning user response as location: '{user_response}'")
                 session.collected_data.location = user_response.strip()
+                return # Avoid running full extraction again
         if any(word in user_response.lower() for word in ['tomorrow', 'today', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday']):
             session.collected_data.date = self._parse_datetime(user_response, '2:00 PM')
     

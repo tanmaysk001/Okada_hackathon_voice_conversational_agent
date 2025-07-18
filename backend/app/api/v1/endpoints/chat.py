@@ -35,12 +35,18 @@ async def chat(request: ChatRequest):
             "messages": [HumanMessage(content=request.message)],
             "use_rag": request.use_rag,
             "use_web_search": request.use_web_search,
-            "session_id": request.session_id, # <-- THE CRITICAL FIX
+            "session_id": request.session_id
         }
 
         # The thread_id is used by the checkpointer to save state.
         # The session_id in here is redundant now but harmless.
-        config = {"configurable": {"thread_id": request.session_id}}
+        config = {
+            "configurable": {
+                "thread_id": request.session_id,
+                "session_id": request.session_id
+            },
+            "recursion_limit": 50,
+        }
 
         # Invoke the agent from the manager
         agent_with_history = agent_manager.get_agent_with_history()

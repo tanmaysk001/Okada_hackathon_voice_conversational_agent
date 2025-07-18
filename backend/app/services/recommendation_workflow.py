@@ -12,7 +12,7 @@ from app.models.crm_models import (
     ConversationState, UserContext, PropertyRecommendation
 )
 from app.services.database_service import get_database
-from app.services import vector_store # Correct import for RAG functionality
+from app.services import vector_store, property_service # Correct import for RAG functionality
 
 logger = logging.getLogger(__name__)
 
@@ -95,46 +95,49 @@ class RecommendationWorkflowManager:
 
     async def _generate_recommendations_step(self, workflow_session: WorkflowSession) -> WorkflowStep:
         """
-        This is the core logic that replaces the placeholder 'property_recommendation_engine'.
-        It uses the vector store to find properties and an LLM to generate a response.
+        This is the final logic fix. It uses the resilient property_service and a very strict
+        prompt to ensure the agent makes a recommendation and then immediately offers to book a viewing.
         """
-        user_id = workflow_session.user_id
         initial_query = workflow_session.data.get("initial_message", "find a property")
+        logger.info(f"Generating recommendations from MongoDB for query: '{initial_query}'")
 
         try:
-            # 1. Use the vector store to retrieve relevant documents
-            retriever = vector_store.get_retriever(session_id=user_id, search_kwargs={"k": 3})
-            retrieved_docs = retriever.invoke(initial_query)
+            # 1. Use our resilient service to get property data from MongoDB
+            context_str = await property_service.get_properties_as_text(initial_query)
 
-            if not retrieved_docs:
+            if "No properties were found" in context_str:
                 return WorkflowStep(
                     step_name="no_recommendations_found",
-                    success=True, # The workflow step itself succeeded
-                    response_message="I couldn't find any properties based on your request in the documents I have. Could you try rephrasing or providing more details?",
+                    success=True,
+                    response_message="I'm sorry, but I couldn't find any properties in our database right now. Please check back later.",
                     next_step="completed"
                 )
 
-            # 2. Create a context string for the LLM
-            context_str = "\n\n---\n\n".join([doc.page_content for doc in retrieved_docs])
+            # 2. --- THE FINAL, DEMO-WINNING PROMPT ---
+            prompt = f"""You are a professional and proactive real estate assistant for Okada. Your ONLY task is to help the user find a property from the internal database and book a viewing.
 
-            # 3. Create a prompt for the LLM to generate a recommendation
-            prompt = f"""You are a helpful real estate assistant. Based ONLY on the following property information, provide a concise recommendation that directly answers the user's request.
+            **User's Request:** "{initial_query}"
 
-            User's Request: "{initial_query}"
-
-            Available Property Information:
+            **Available Property Information from Okada's Database:**
             ---
             {context_str}
             ---
 
-            Your concise recommendation:
+            **Your Instructions (Follow Exactly):**
+            1.  Analyze the user's request and the available properties.
+            2.  If the database results do not perfectly match the user's budget or location, acknowledge it briefly (e.g., "While I couldn't find an exact match for your budget, I did find a great option nearby...").
+            3.  Select the SINGLE BEST property from the list to recommend to the user.
+            4.  Present the details of this single best property in a friendly, concise summary.
+            5.  Your response MUST end with a proactive question to book a viewing. For example: "Would you like me to schedule a viewing for this property for you?" or "If you're interested, I can book a viewing appointment right away."
+            
+            **DO NOT** say you cannot access the database. **DO NOT** ask for more preferences. Your goal is to recommend one property and book a viewing.
             """
 
-            # 4. Call the LLM
+            # 3. Call the LLM
             llm_response = await Settings.llm.achat([ChatMessage(role="user", content=prompt)])
             response_message = llm_response.message.content
 
-            # 5. Update and save the session
+            # 4. Update and save the session
             workflow_session.current_step = "completed"
             workflow_session.data["recommendations"] = response_message
             workflow_session.data["history"].append(f"Assistant: {response_message}")
@@ -144,8 +147,7 @@ class RecommendationWorkflowManager:
                 step_name="recommendations_generated",
                 success=True,
                 response_message=response_message,
-                next_step="completed",
-                collected_data={"retrieved_docs": len(retrieved_docs)}
+                next_step="completed"
             )
 
         except Exception as e:
@@ -153,7 +155,7 @@ class RecommendationWorkflowManager:
             return WorkflowStep(
                 step_name="error",
                 success=False,
-                response_message="I'm sorry, I encountered an error while trying to find recommendations for you. Please try again.",
+                response_message="I'm sorry, I encountered an error while looking for recommendations. Please try again.",
                 next_step="failed"
             )
 

@@ -101,6 +101,7 @@ async def create_or_update_user(
             full_name=full_name,
             email=email,
             company_id=company_id,
+            hashed_password=hashed_password, # Add this
             preferences=preferences or {},
             recommendation_preferences=recommendation_preferences or {}
         )

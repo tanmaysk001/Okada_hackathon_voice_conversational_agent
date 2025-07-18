@@ -1,21 +1,13 @@
 from langgraph.graph import StateGraph, END
 from app.agent.state import AgentState
 from app.agent.nodes import (
-    agent_entry,
-    classify_csv_intent,
-    generate_direct,
-    generate_with_context,
-    query_csv_tool,
-    retrieve_from_rag,
-    route_after_rag,
-    run_web_search,
-    triage_query,
-    handle_scheduling,
-    handle_recommendation
+    agent_entry, classify_csv_intent, generate_direct, generate_with_context,
+    query_csv_tool, retrieve_from_rag, route_after_rag, run_web_search,
+    triage_query, handle_scheduling, handle_recommendation
 )
 
 def create_agent_graph(checkpointer):
-    """Creates the LangGraph agent with a checkpointer for persistent memory."""
+    """Creates the LangGraph agent..."""
     graph = StateGraph(AgentState)
 
     # Add nodes
@@ -40,8 +32,8 @@ def create_agent_graph(checkpointer):
         path_map={
             "handle_scheduling": "handle_scheduling",
             "handle_recommendation": "handle_recommendation",
-            "classify_csv_intent": "classify_csv_intent", 
-            "retrieve_from_rag": "retrieve_from_rag",   
+            "classify_csv_intent": "classify_csv_intent",
+            "retrieve_from_rag": "retrieve_from_rag",
             "run_web_search": "run_web_search",
             "generate_direct": "generate_direct",
         }
@@ -82,5 +74,5 @@ def create_agent_graph(checkpointer):
     graph.add_edge("handle_scheduling", END)
     graph.add_edge("handle_recommendation", END)
 
-    # Compile the graph with the checkpointer
+    # Compile the graph
     return graph.compile(checkpointer=checkpointer)

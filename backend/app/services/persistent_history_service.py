@@ -32,35 +32,40 @@ async def add_message_to_history(user_email: str, session_id: str, user_message:
     try:
         history_collection = await get_history_collection()
         
-        new_messages = [
+        # Standardize on the Pydantic model for consistency
+        new_messages_to_add = [
             ChatMessage(role="user", content=user_message),
             ChatMessage(role="assistant", content=assistant_message),
         ]
         
-        conversation = await history_collection.find_one(
-            {"user_email": user_email, "session_id": session_id}
+        # The query to find the existing conversation document
+        query = {"user_email": user_email, "session_id": session_id}
+
+        # Use find_one_and_update with upsert=True. This is atomic and safer.
+        # It finds the document and pushes the new messages.
+        # If it doesn't find a document, it creates a new one with all the fields.
+        result = await history_collection.find_one_and_update(
+            query,
+            {
+                "$push": {"messages": {"$each": [msg.model_dump() for msg in new_messages_to_add]}},
+                "$set": {"updated_at": dt.datetime.utcnow()},
+                "$setOnInsert": {
+                    "user_email": user_email,
+                    "session_id": session_id,
+                    "created_at": dt.datetime.utcnow(),
+                    "tags": []
+                }
+            },
+            upsert=True, # This is the key: creates the document if it doesn't exist
+            return_document=True
         )
 
-        if conversation:
-            result = await history_collection.update_one(
-                {"_id": conversation["_id"]},
-                {
-                    "$push": {"messages": {"$each": [msg.model_dump() for msg in new_messages]}},
-                    "$set": {"updated_at": dt.datetime.utcnow()}
-                }
-            )
-            if result.modified_count > 0:
-                logging.info(f"Successfully appended messages to history for user='{user_email}' session='{session_id}'")
-            else:
-                logging.warning(f"Update operation found document but did not modify it for user='{user_email}' session='{session_id}'")
+        if result:
+            logging.info(f"Successfully updated/created history for user='{user_email}' session='{session_id}'")
         else:
-            new_history = ConversationHistory(
-                user_email=user_email,
-                session_id=session_id,
-                messages=new_messages
-            )
-            history_dict = new_history.model_dump(by_alias=True, exclude_none=True)
-            result = await history_collection.insert_one(history_dict)
+            logging.error(f"Failed to update or insert history for user='{user_email}' session='{session_id}'")
+
+    except Exception as e:
             logging.info(f"Successfully created new history document with ID: {result.inserted_id} for user='{user_email}' session='{session_id}'")
     except Exception as e:
         logging.error(f"Failed to add message to history for user='{user_email}' session='{session_id}': {e}", exc_info=True)

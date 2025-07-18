@@ -32,6 +32,12 @@ async def handle_create_or_update_user(user_data: dict):
         email = user_data.get("email")
         full_name = user_data.get("full_name")
         company_name = user_data.get("company_name")
+        phone_number = user_data.get("phone_number") # Add this
+        password = user_data.get("password") # Add this
+
+        # NOTE: In a real app, you MUST hash the password here.
+        # For the hackathon demo, we'll store it directly for speed.
+        hashed_password = f"hashed_{password}_demo" if password else None
 
         if not email:
             raise HTTPException(status_code=400, detail="Email is required.")
@@ -39,7 +45,9 @@ async def handle_create_or_update_user(user_data: dict):
         user = await crm_service.create_or_update_user(
             full_name=full_name or "Unknown User", # Provide a default if name is missing on update
             email=email,
-            company_name=company_name
+            company_name=company_name,
+            phone_number=phone_number, # Add this
+            hashed_password=hashed_password # Add this
         )
         return user
     except Exception as e:

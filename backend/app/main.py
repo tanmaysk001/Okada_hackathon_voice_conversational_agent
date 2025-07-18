@@ -1,9 +1,8 @@
 # backend/app/main.py
-
 import contextlib
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1.endpoints import upload, history, management, audio, live_chat, chat  # Added chat
+from app.api.v1.endpoints import upload, history, management, audio, live_chat, chat
 from app.api.v1.endpoints.health import health_router
 from app.api.v1.endpoints import user_management, appointment
 from app.core.config import settings
@@ -43,21 +42,18 @@ app = FastAPI(
 )
 
 # --- CORS Middleware ---
-origins = [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:5173",
-]
+# This is the key change to fix the "403 Forbidden" error on the WebSocket.
+# We are allowing all origins for development purposes.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],  # Allows all origins
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
 )
 
 # --- API Routers ---
-app.include_router(chat.router, prefix="/api/v1", tags=["Chat"]) # Added chat router
+app.include_router(chat.router, prefix="/api/v1", tags=["Chat"])
 app.include_router(upload.router, prefix="/api/v1", tags=["RAG Document Upload"])
 app.include_router(history.router, prefix="/api/v1/history", tags=["History"])
 app.include_router(management.router, prefix="/api/v1", tags=["Management"])
