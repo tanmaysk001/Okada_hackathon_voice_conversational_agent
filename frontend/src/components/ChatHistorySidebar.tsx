@@ -71,8 +71,7 @@ const ChatHistorySidebar: React.FC<ChatHistorySidebarProps> = ({
   return (
     <div className="w-80 bg-white dark:bg-black p-4 flex flex-col h-full border-r border-gray-200 dark:border-gray-800">
       <div className="flex flex-col mb-4">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Okada Voice RAG</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">Agent</p>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-blue-500">Okada Intelli-Agent</h1>
       </div>
       
       <div className="flex items-center justify-between mb-6">

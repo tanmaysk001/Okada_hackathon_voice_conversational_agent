@@ -112,9 +112,7 @@ export function LiveChatModal({ isOpen, onOpenChange, isRagEnabled, isWebSearchE
           </Button>
         </DialogFooter>
         
-        <Button variant="ghost" size="icon" onClick={handleEndCall} className="absolute top-4 right-4 rounded-full">
-            <X className="h-4 w-4" />
-        </Button>
+        
       </DialogContent>
     </Dialog>
   );

@@ -82,32 +82,8 @@ export function ChatLayout({ sessionId: initialSessionId, theme, toggleTheme }: 
       />
       <div className="flex-1 flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-900/50">
         <header className="border-b border-gray-200 dark:border-gray-800 flex items-center justify-between p-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Multimodal AI Chatbot</h2>
+          <div></div>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsTextRagEnabled(!isTextRagEnabled)}
-              className={cn(
-                "text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800",
-                isTextRagEnabled && "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800"
-              )}
-            >
-              <BrainCircuit className={cn("mr-2 h-4 w-4", isTextRagEnabled && "text-blue-500")} />
-              RAG Mode
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsWebSearchEnabled(!isWebSearchEnabled)}
-              className={cn(
-                "text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800",
-                isWebSearchEnabled && "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800"
-              )}
-            >
-              <Search className="mr-2 h-4 w-4" />
-              Web Search
-            </Button>
             <Button variant="primary" size="sm" onClick={handleOpenLiveChat}>
               <Headphones className="mr-2 h-4 w-4" />
               Live Chat

@@ -1,5 +1,5 @@
 // src/components/ChatInput.tsx
-import { Paperclip, SendHorizonal, Loader2, BrainCircuit } from 'lucide-react';
+import { Paperclip, SendHorizonal, Loader2, BrainCircuit, Globe } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { useRef } from 'react';
@@ -44,6 +44,7 @@ export function ChatInput({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       uploadFile(e.target.files[0]);
+      onRagToggle(true); // Automatically enable RAG mode on file upload
     }
   };
 
@@ -52,7 +53,7 @@ export function ChatInput({
   };
 
   return (
-    <div className="p-4 bg-gray-900 w-full">
+    <div className="p-4 bg-black w-full">
       <div className="flex items-center gap-2">
         <Input
           id="file-upload"
@@ -62,17 +63,26 @@ export function ChatInput({
           className="hidden"
           disabled={isLoading}
         />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={handleUploadClick}
-          disabled={isLoading}
-          aria-label="Upload file"
-          className="text-gray-400 hover:text-gray-200"
-        >
-          <Paperclip className="h-5 w-5" />
-        </Button>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={handleUploadClick}
+                disabled={isLoading}
+                aria-label="Upload file"
+                className="text-gray-400 hover:text-gray-200"
+              >
+                <Paperclip className="h-5 w-5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Upload File (Enables RAG)</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         
         {/* The main chat input form */}
         <form onSubmit={(e) => sendMessage(e, isRagEnabled, isWebSearchEnabled)} className="flex-1 flex items-center gap-2">
@@ -82,7 +92,7 @@ export function ChatInput({
             placeholder={isRagEnabled ? "Ask about your documents..." : "Ask me anything..."}
             autoComplete="off"
             disabled={isLoading}
-            className="flex-1 bg-gray-800 border-gray-700 text-gray-200 placeholder-gray-500"
+            className="flex-1 bg-black border-gray-700 text-gray-200 placeholder-gray-500"
           />
           <Button type="submit" size="icon" disabled={isLoading || !input.trim()} aria-label="Send message" className="bg-blue-600 hover:bg-blue-700 text-white">
             {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <SendHorizonal className="h-5 w-5" />}
@@ -109,6 +119,30 @@ export function ChatInput({
                 </TooltipTrigger>
                 <TooltipContent>
                     <p>Query Uploaded Files</p>
+                </TooltipContent>
+            </Tooltip>
+        </TooltipProvider>
+
+        {/* --- THIS IS THE NEW WEB SEARCH TOGGLE BUTTON --- */}
+        <TooltipProvider>
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Button
+                    type="button"
+                    variant={isWebSearchEnabled ? "secondary" : "ghost"} // Change variant based on state
+                    size="icon"
+                    onClick={() => onWebSearchToggle(!isWebSearchEnabled)} // Simple toggle on click
+                    disabled={isLoading}
+                    aria-label="Toggle Web Search"
+                    className={cn("text-gray-400 hover:text-gray-200", {
+                        "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300": isWebSearchEnabled,
+                    })}
+                    >
+                    <Globe className="h-5 w-5" />
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                    <p>Enable/Disable Web Search</p>
                 </TooltipContent>
             </Tooltip>
         </TooltipProvider>
